@@ -1,0 +1,15 @@
+node_modules
+dist
+lib
+.DS_Store
+.firebase
+.firebase-config
+.firebaserc
+.env
+.env.local
+.secret.local
+.npm-cache
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+*.tsbuildinfo

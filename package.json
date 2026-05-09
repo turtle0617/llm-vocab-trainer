@@ -1,0 +1,24 @@
+{
+  "name": "vocab-pwa",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "packages/shared",
+    "apps/web",
+    "functions"
+  ],
+  "scripts": {
+    "build": "npm run build -ws",
+    "test": "npm run test -ws --if-present",
+    "lint": "npm run lint -ws --if-present",
+    "dev:web": "npm run dev -w apps/web",
+    "dev:functions": "npm run serve -w functions",
+    "deploy": "firebase deploy"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.3"
+  }
+}

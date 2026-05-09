@@ -1,0 +1,28 @@
+{
+  "name": "@vocab/functions",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "lib/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "serve": "npm run build && firebase emulators:start --only functions,firestore,hosting",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "@vocab/shared": "*",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "firebase-admin": "^13.4.0",
+    "firebase-functions": "^6.3.2",
+    "ts-fsrs": "^5.2.0",
+    "zod": "^3.24.4"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.18",
+    "@types/express": "^5.0.2",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.3"
+  }
+}
