@@ -8,11 +8,13 @@ import {
   ReviewRating,
   generatedWordSchema,
   normalizeWordInput,
+  reviewIntensitySchema,
   reviewRatingSchema,
   type CreateCardRequest,
   type CreateReviewRequest,
   type CreateSectionRequest,
-  type GenerateWordRequest
+  type GenerateWordRequest,
+  type UpdateSettingsRequest
 } from "@vocab/shared";
 import { createInitialFsrsState, scheduleReview } from "./srs.js";
 import {
@@ -22,7 +24,9 @@ import {
   deleteSection,
   getCardsPage,
   getDashboard,
+  getSettings,
   getSectionSummaries,
+  updateSettings,
   writeReview
 } from "./repositories.js";
 import { generateWordWithProvider } from "./llm/providers.js";
@@ -60,6 +64,29 @@ app.get("/api/dashboard", async (_req, res, next) => {
 app.get("/api/sections", async (_req, res, next) => {
   try {
     res.json(await getSectionSummaries(db));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/settings", async (_req, res, next) => {
+  try {
+    res.json(await getSettings(db));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.put("/api/settings", async (req, res, next) => {
+  try {
+    const body = z
+      .object({
+        reviewIntensity: reviewIntensitySchema
+      })
+      .strict()
+      .parse(req.body) satisfies UpdateSettingsRequest;
+
+    res.json(await updateSettings(db, body.reviewIntensity));
   } catch (error) {
     next(error);
   }
@@ -169,6 +196,7 @@ app.post("/api/reviews", async (req, res, next) => {
       .strict()
       .parse(req.body) satisfies CreateReviewRequest;
 
+    const settings = await getSettings(db);
     const result = await db.runTransaction(async (transaction) => {
       const cardRef = db.collection("cards").doc(body.cardId);
       const snapshot = await transaction.get(cardRef);
@@ -178,7 +206,9 @@ app.post("/api/reviews", async (req, res, next) => {
       if (card.sectionId !== body.sectionId) throw new HttpError(400, "Card does not belong to section.");
       if (!isReviewRating(body.rating)) throw new HttpError(400, "Invalid review rating.");
 
-      const scheduled = scheduleReview(card.fsrs, body.rating, new Date(body.reviewedAt));
+      const scheduled = scheduleReview(card.fsrs, body.rating, new Date(body.reviewedAt), {
+        desiredRetention: settings.desiredRetention
+      });
       transaction.update(cardRef, {
         fsrs: scheduled.fsrs,
         due: scheduled.due,

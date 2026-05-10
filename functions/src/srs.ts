@@ -2,13 +2,20 @@ import { Rating, createEmptyCard, fsrs, type Card, type Grade, type RecordLogIte
 import { ReviewRating } from "@vocab/shared";
 import { FSRS_PARAMETERS } from "./fsrs-config.js";
 
-const scheduler = fsrs(FSRS_PARAMETERS);
-
 export function createInitialFsrsState() {
   return serializeCard(createEmptyCard<Card>(new Date()));
 }
 
-export function scheduleReview(fsrsState: unknown, rating: ReviewRating, reviewedAt: Date) {
+export function scheduleReview(
+  fsrsState: unknown,
+  rating: ReviewRating,
+  reviewedAt: Date,
+  options: { desiredRetention?: number } = {}
+) {
+  const scheduler = fsrs({
+    ...FSRS_PARAMETERS,
+    request_retention: options.desiredRetention ?? FSRS_PARAMETERS.request_retention
+  });
   const card = deserializeCard(fsrsState);
   const scheduled = scheduler.next(card, reviewedAt, toTsFsrsRating(rating));
 

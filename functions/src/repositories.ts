@@ -1,13 +1,19 @@
 import { FieldValue, type DocumentData, type Firestore, type Transaction } from "firebase-admin/firestore";
 import {
+  desiredRetentionByIntensity,
+  type AppSettings,
   type CreateCardRequest,
   type CreateReviewRequest,
   type CreateSectionRequest,
   type DashboardResponse,
+  type ReviewIntensity,
   type SectionSummary,
   type VocabCard
 } from "@vocab/shared";
 import { decodeCursor, encodeCursor } from "./pagination.js";
+
+const settingsDocId = "global";
+const defaultReviewIntensity: ReviewIntensity = "standard";
 
 export async function createSection(db: Firestore, body: CreateSectionRequest): Promise<SectionSummary> {
   const now = new Date().toISOString();
@@ -53,6 +59,21 @@ export async function getDashboard(db: Firestore): Promise<DashboardResponse> {
     reviewTrend,
     sections
   };
+}
+
+export async function getSettings(db: Firestore): Promise<AppSettings> {
+  const snapshot = await db.collection("settings").doc(settingsDocId).get();
+  if (!snapshot.exists) return createSettings(defaultReviewIntensity, new Date().toISOString());
+
+  const data = snapshot.data() ?? {};
+  const reviewIntensity = isReviewIntensity(data.reviewIntensity) ? data.reviewIntensity : defaultReviewIntensity;
+  return createSettings(reviewIntensity, data.updatedAt ?? new Date().toISOString());
+}
+
+export async function updateSettings(db: Firestore, reviewIntensity: ReviewIntensity): Promise<AppSettings> {
+  const settings = createSettings(reviewIntensity, new Date().toISOString());
+  await db.collection("settings").doc(settingsDocId).set(settings, { merge: true });
+  return settings;
 }
 
 export async function createCard(db: Firestore, body: CreateCardRequest, fsrs: unknown) {
@@ -240,4 +261,16 @@ function calculateStreak(trend: Array<{ date: string; count: number }>) {
 
 function increment(value: number) {
   return FieldValue.increment(value);
+}
+
+function createSettings(reviewIntensity: ReviewIntensity, updatedAt: string): AppSettings {
+  return {
+    reviewIntensity,
+    desiredRetention: desiredRetentionByIntensity[reviewIntensity],
+    updatedAt
+  };
+}
+
+function isReviewIntensity(value: unknown): value is ReviewIntensity {
+  return value === "relaxed" || value === "standard" || value === "solid" || value === "exam";
 }

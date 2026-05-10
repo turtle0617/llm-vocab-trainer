@@ -6,9 +6,10 @@ import type {
   GenerateWordRequest,
   GeneratedWord,
   PaginatedCardsResponse,
+  AppSettings,
   SectionSummary
 } from "@vocab/shared";
-import { ReviewRating } from "@vocab/shared";
+import { desiredRetentionByIntensity, ReviewRating, type UpdateSettingsRequest } from "@vocab/shared";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 const USE_MOCK_API = import.meta.env.DEV && !API_BASE_URL;
@@ -45,6 +46,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 const liveApi = {
   dashboard: () => request<DashboardResponse>("/dashboard"),
+  settings: () => request<AppSettings>("/settings"),
+  updateSettings: (body: UpdateSettingsRequest) =>
+    request<AppSettings>("/settings", { method: "PUT", body: JSON.stringify(body) }),
   sections: () => request<SectionSummary[]>("/sections"),
   createSection: (body: CreateSectionRequest) =>
     request<SectionSummary>("/sections", { method: "POST", body: JSON.stringify(body) }),
@@ -79,6 +83,7 @@ function createMockApi(): typeof liveApi {
   const storageKey = "vocab-pwa-dev-mock";
 
   type MockState = {
+    settings: AppSettings;
     sections: SectionSummary[];
     cards: Array<{
       id: string;
@@ -97,9 +102,26 @@ function createMockApi(): typeof liveApi {
 
   function load(): MockState {
     const raw = localStorage.getItem(storageKey);
-    if (raw) return JSON.parse(raw) as MockState;
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<MockState>;
+      return {
+        settings: parsed.settings ?? {
+          reviewIntensity: "standard",
+          desiredRetention: desiredRetentionByIntensity.standard,
+          updatedAt: new Date().toISOString()
+        },
+        sections: parsed.sections ?? [],
+        cards: parsed.cards ?? [],
+        reviews: parsed.reviews ?? []
+      };
+    }
     const now = new Date().toISOString();
     const state: MockState = {
+      settings: {
+        reviewIntensity: "standard",
+        desiredRetention: desiredRetentionByIntensity.standard,
+        updatedAt: now
+      },
       sections: [
         {
           id: "demo-section",
@@ -168,6 +190,19 @@ function createMockApi(): typeof liveApi {
         reviewTrend,
         sections: state.sections
       };
+    },
+    async settings() {
+      return load().settings;
+    },
+    async updateSettings(body) {
+      const state = load();
+      state.settings = {
+        reviewIntensity: body.reviewIntensity,
+        desiredRetention: desiredRetentionByIntensity[body.reviewIntensity],
+        updatedAt: new Date().toISOString()
+      };
+      save(state);
+      return state.settings;
     },
     async sections() {
       return hydrate(load()).sections;
@@ -289,8 +324,15 @@ function createMockApi(): typeof liveApi {
       const card = state.cards.find((item) => item.id === body.cardId && item.sectionId === body.sectionId);
       if (!card) throw new Error("Card was not found.");
       const next = new Date(body.reviewedAt);
+      const intervals = mockIntervalsByIntensity[state.settings.reviewIntensity];
       const days =
-        body.rating === ReviewRating.Again ? 0 : body.rating === ReviewRating.Hard ? 1 : body.rating === ReviewRating.Good ? 3 : 7;
+        body.rating === ReviewRating.Again
+          ? intervals.again
+          : body.rating === ReviewRating.Hard
+            ? intervals.hard
+            : body.rating === ReviewRating.Good
+              ? intervals.good
+              : intervals.easy;
       next.setDate(next.getDate() + days);
       card.due = next.toISOString();
       card.updatedAt = new Date().toISOString();
@@ -301,3 +343,10 @@ function createMockApi(): typeof liveApi {
     }
   };
 }
+
+const mockIntervalsByIntensity = {
+  relaxed: { again: 0, hard: 2, good: 5, easy: 10 },
+  standard: { again: 0, hard: 1, good: 3, easy: 7 },
+  solid: { again: 0, hard: 1, good: 2, easy: 5 },
+  exam: { again: 0, hard: 1, good: 1, easy: 4 }
+} as const;

@@ -1,4 +1,5 @@
 import type { DashboardResponse, SectionSummary, VocabCard } from "@vocab/shared";
+import { desiredRetentionByIntensity, type ReviewIntensity } from "@vocab/shared";
 
 export type DashboardAction =
   | { kind: "review"; label: string; description: string }
@@ -9,30 +10,35 @@ export const reviewIntensityPresets = [
   {
     id: "relaxed",
     label: "輕鬆",
-    retention: 0.85,
+    retention: desiredRetentionByIntensity.relaxed,
     description: "每天複習較少，適合長期維持。"
   },
   {
     id: "standard",
     label: "標準",
-    retention: 0.9,
+    retention: desiredRetentionByIntensity.standard,
     description: "平衡記憶保持率與每日負擔。"
   },
   {
     id: "solid",
     label: "扎實",
-    retention: 0.93,
+    retention: desiredRetentionByIntensity.solid,
     description: "複習更密集，適合重要內容。"
   },
   {
     id: "exam",
     label: "考試",
-    retention: 0.95,
+    retention: desiredRetentionByIntensity.exam,
     description: "提高保持率，短期壓力也最高。"
   }
-] as const;
+] as const satisfies ReadonlyArray<{
+  id: ReviewIntensity;
+  label: string;
+  retention: number;
+  description: string;
+}>;
 
-export type ReviewIntensityId = (typeof reviewIntensityPresets)[number]["id"];
+export type ReviewIntensityId = ReviewIntensity;
 
 export function getDashboardAction(dashboard: DashboardResponse): DashboardAction {
   if (dashboard.totals.dueToday > 0) {

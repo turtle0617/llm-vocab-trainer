@@ -31,8 +31,6 @@ type View = "dashboard" | "sections" | "add" | "review" | "settings";
 type ToastState = { message: string; tone?: "success" | "warning" };
 type EmptyAction = { label: string; onClick: () => void; variant?: "primary" | "secondary" };
 
-const intensityStorageKey = "vocab-pwa-review-intensity";
-
 export function App() {
   const [view, setView] = useState<View>("dashboard");
   const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
@@ -40,10 +38,8 @@ export function App() {
   const [selectedSectionId, setSelectedSectionId] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [toast, setToast] = useState<ToastState | null>(null);
-  const [reviewIntensity, setReviewIntensity] = useState<ReviewIntensityId>(() => {
-    const saved = window.localStorage.getItem(intensityStorageKey);
-    return reviewIntensityPresets.some((preset) => preset.id === saved) ? (saved as ReviewIntensityId) : "standard";
-  });
+  const [reviewIntensity, setReviewIntensity] = useState<ReviewIntensityId>("standard");
+  const [settingsSaving, setSettingsSaving] = useState(false);
 
   const selectedSection = useMemo(
     () => sections.find((section) => section.id === selectedSectionId) ?? getPrimarySection(sections),
@@ -78,13 +74,32 @@ export function App() {
     }
   }
 
-  useEffect(() => {
-    void loadDashboard();
-  }, []);
+  async function loadSettings() {
+    try {
+      const settings = await api.settings();
+      setReviewIntensity(settings.reviewIntensity);
+    } catch (err) {
+      notify(formatAppError(err), "warning");
+    }
+  }
+
+  async function updateReviewIntensity(nextIntensity: ReviewIntensityId) {
+    setSettingsSaving(true);
+    try {
+      const settings = await api.updateSettings({ reviewIntensity: nextIntensity });
+      setReviewIntensity(settings.reviewIntensity);
+      notify(`複習強度已更新為 ${Math.round(settings.desiredRetention * 100)}%`);
+    } catch (err) {
+      notify(formatAppError(err), "warning");
+    } finally {
+      setSettingsSaving(false);
+    }
+  }
 
   useEffect(() => {
-    window.localStorage.setItem(intensityStorageKey, reviewIntensity);
-  }, [reviewIntensity]);
+    void loadDashboard();
+    void loadSettings();
+  }, []);
 
   return (
     <div className="app-shell">
@@ -166,7 +181,7 @@ export function App() {
           />
         )}
         {view === "settings" && (
-          <SettingsView intensity={reviewIntensity} onChange={setReviewIntensity} />
+          <SettingsView intensity={reviewIntensity} saving={settingsSaving} onChange={updateReviewIntensity} />
         )}
       </main>
     </div>
@@ -802,9 +817,11 @@ function CompactEntry({ entry }: { entry: GeneratedWord["entries"][number] }) {
 
 function SettingsView({
   intensity,
+  saving,
   onChange
 }: {
   intensity: ReviewIntensityId;
+  saving: boolean;
   onChange: (value: ReviewIntensityId) => void;
 }) {
   const selected = reviewIntensityPresets.find((preset) => preset.id === intensity) ?? reviewIntensityPresets[1];
@@ -824,6 +841,7 @@ function SettingsView({
             <button
               key={preset.id}
               className={`preset-option ${preset.id === selected.id ? "active" : ""}`}
+              disabled={saving}
               onClick={() => onChange(preset.id)}
             >
               <strong>{preset.label}</strong>
@@ -835,7 +853,7 @@ function SettingsView({
         <InlineNotice
           tone="info"
           title={`目前設定：${selected.label} ${Math.round(selected.retention * 100)}%`}
-          description="越高代表記得更牢，但每天複習更多；越低代表複習較少，但忘記機率較高。目前設定先保存在此裝置，後端排程仍使用專案預設值。"
+          description="越高代表記得更牢，但每天複習更多；越低代表複習較少，但忘記機率較高。此設定會套用到之後送出的複習排程，不會自動重排既有卡片。"
         />
       </div>
     </section>

@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   ReviewRating,
   assertValidReviewRating,
+  desiredRetentionByIntensity,
   generatedWordSchema,
-  normalizeWordInput
+  normalizeWordInput,
+  reviewIntensitySchema
 } from "./index.js";
 
 describe("shared schemas", () => {
@@ -17,6 +19,17 @@ describe("shared schemas", () => {
   it("rejects invalid review ratings", () => {
     expect(() => assertValidReviewRating(5)).toThrow();
     expect(() => assertValidReviewRating("Good")).toThrow();
+  });
+
+  it("defines review intensity presets", () => {
+    expect(reviewIntensitySchema.parse("standard")).toBe("standard");
+    expect(() => reviewIntensitySchema.parse("intense")).toThrow();
+    expect(desiredRetentionByIntensity).toEqual({
+      relaxed: 0.85,
+      standard: 0.9,
+      solid: 0.93,
+      exam: 0.95
+    });
   });
 
   it("validates generated words", () => {

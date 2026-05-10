@@ -9,6 +9,17 @@ export enum ReviewRating {
 
 export const reviewRatingSchema = z.nativeEnum(ReviewRating);
 
+export const reviewIntensitySchema = z.enum(["relaxed", "standard", "solid", "exam"]);
+
+export const desiredRetentionByIntensity = {
+  relaxed: 0.85,
+  standard: 0.9,
+  solid: 0.93,
+  exam: 0.95
+} as const satisfies Record<ReviewIntensity, number>;
+
+export type ReviewIntensity = z.infer<typeof reviewIntensitySchema>;
+
 export const partOfSpeechSchema = z.enum([
   "noun",
   "verb",
@@ -114,6 +125,16 @@ export interface CreateReviewRequest {
   sectionId: string;
   rating: ReviewRating;
   reviewedAt: string;
+}
+
+export interface AppSettings {
+  reviewIntensity: ReviewIntensity;
+  desiredRetention: number;
+  updatedAt: string;
+}
+
+export interface UpdateSettingsRequest {
+  reviewIntensity: ReviewIntensity;
 }
 
 export function assertValidReviewRating(value: unknown): ReviewRating {
