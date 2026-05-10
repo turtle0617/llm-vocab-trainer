@@ -23,6 +23,18 @@
 - `ts-fsrs` for spaced repetition scheduling
 - Zod validation for API and LLM output contracts
 
+## FSRS Configuration
+
+The backend uses a centralized FSRS configuration in `functions/src/fsrs-config.ts`.
+
+- Desired retention starts at `0.9`.
+- Short-term scheduling is enabled with same-day learning and relearning steps: `["10m"]`.
+- Existing cards are not automatically rescheduled when FSRS settings change.
+- Personalized parameter optimization should wait until at least `1000` effective reviews.
+- Parameter optimization should be treated as a periodic operation, roughly every `30` days.
+
+These defaults follow the project's current needs: predictable vocabulary review load, no long learning steps, and no surprise backlog spikes from mass rescheduling.
+
 ## Project Structure
 
 ```txt
