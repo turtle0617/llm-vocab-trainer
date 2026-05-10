@@ -1,7 +1,8 @@
 import { Rating, createEmptyCard, fsrs, type Card, type Grade, type RecordLogItem, type ReviewLog } from "ts-fsrs";
 import { ReviewRating } from "@vocab/shared";
+import { FSRS_PARAMETERS } from "./fsrs-config.js";
 
-const scheduler = fsrs();
+const scheduler = fsrs(FSRS_PARAMETERS);
 
 export function createInitialFsrsState() {
   return serializeCard(createEmptyCard<Card>(new Date()));
