@@ -764,53 +764,27 @@ function GeneratedWordCard({ generated, onAdd }: { generated: GeneratedWord; onA
 }
 
 function ReviewAnswer({ card }: { card: VocabCard }) {
-  const [primaryEntry, ...otherEntries] = card.content.entries;
-  const extraExamples = primaryEntry?.examples.slice(1) ?? [];
-  const hasMore = otherEntries.length > 0 || extraExamples.length > 0;
-
   return (
     <div className="answer">
       <h2>{card.word}</h2>
-      {primaryEntry && <CompactEntry entry={primaryEntry} />}
-      {hasMore && (
-        <details className="more-answer">
-          <summary>更多內容</summary>
-          {extraExamples.map((example) => (
-            <blockquote key={example.en}>
-              {example.en}
-              <small>{example.zh}</small>
-            </blockquote>
-          ))}
-          {otherEntries.map((entry) => (
-            <div key={`${entry.partOfSpeech}-${entry.zhDefinition}`} className="entry">
-              <span className="tag">{entry.partOfSpeech}</span>
-              <p><strong>{entry.zhDefinition}</strong> · {entry.enDefinition}</p>
-              {entry.examples.map((example) => (
-                <blockquote key={example.en}>
-                  {example.en}
-                  <small>{example.zh}</small>
-                </blockquote>
-              ))}
-            </div>
-          ))}
-        </details>
-      )}
+      {card.content.entries.map((entry, index) => (
+        <ReviewEntry key={`${entry.partOfSpeech}-${entry.zhDefinition}`} entry={entry} isFirst={index === 0} />
+      ))}
     </div>
   );
 }
 
-function CompactEntry({ entry }: { entry: GeneratedWord["entries"][number] }) {
-  const firstExample = entry.examples[0];
+function ReviewEntry({ entry, isFirst }: { entry: GeneratedWord["entries"][number]; isFirst: boolean }) {
   return (
-    <div className="entry compact-entry">
+    <div className={`entry ${isFirst ? "compact-entry" : ""}`}>
       <span className="tag">{entry.partOfSpeech}</span>
       <p><strong>{entry.zhDefinition}</strong> · {entry.enDefinition}</p>
-      {firstExample && (
-        <blockquote>
-          {firstExample.en}
-          <small>{firstExample.zh}</small>
+      {entry.examples.map((example) => (
+        <blockquote key={example.en}>
+          {example.en}
+          <small>{example.zh}</small>
         </blockquote>
-      )}
+      ))}
     </div>
   );
 }

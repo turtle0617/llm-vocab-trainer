@@ -480,6 +480,10 @@ blockquote small {
   width: 100%;
 }
 
+.review-card.flipped {
+  padding-bottom: 96px;
+}
+
 .review-front {
   align-content: center;
   display: grid;
@@ -503,19 +507,6 @@ blockquote small {
   display: grid;
   gap: 14px;
   width: 100%;
-}
-
-.more-answer {
-  border-top: 1px solid #edf1f5;
-  display: grid;
-  gap: 12px;
-  padding-top: 12px;
-}
-
-.more-answer summary {
-  color: #1d4ed8;
-  cursor: pointer;
-  font-weight: 800;
 }
 
 .review-actions {
@@ -731,6 +722,10 @@ blockquote small {
   .review-card {
     min-height: 360px;
     padding: 22px;
+  }
+
+  .review-card.flipped {
+    padding-bottom: 150px;
   }
 
   .review-actions {
