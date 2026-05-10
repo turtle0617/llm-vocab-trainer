@@ -150,13 +150,28 @@ firebase use --add
 
 Enable Cloud Firestore in Firebase Console. Use production mode. This project does not let the browser access Firestore directly; all database writes go through Firebase Functions.
 
-Firebase emulators require Java 21 or newer. On macOS with Homebrew:
+Firebase emulators require Java 21 or newer. Check your current Java:
+
+```sh
+java -version
+echo $JAVA_HOME
+```
+
+On macOS with Homebrew:
 
 ```sh
 brew install openjdk@21
+export JAVA_HOME="$(brew --prefix openjdk@21)"
+export PATH="$JAVA_HOME/bin:$PATH"
 ```
 
-If your global Java is older, run emulators with:
+Then run:
+
+```sh
+npm run dev:functions
+```
+
+If your global Java is older and you only want to use Java 21 for one command, run:
 
 ```sh
 JAVA_HOME=/opt/homebrew/opt/openjdk@21 npm run dev:functions
