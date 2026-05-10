@@ -1,7 +1,47 @@
 :root {
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color: #202833;
-  background: #f6f7f9;
+  --color-bg: #f7f8fb;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f4f7fa;
+  --color-border: #dbe3ec;
+  --color-border-strong: #c5d0dc;
+  --color-text: #202833;
+  --color-muted: #64748b;
+  --color-sidebar: #162033;
+  --color-sidebar-active: #2e3f5d;
+  --color-sidebar-text: #f8fafc;
+  --color-primary-soft: #eef2ff;
+  --color-primary-border: #c7d2fe;
+  --color-primary-text: #3730a3;
+  --color-primary-solid: #4f46e5;
+  --color-add-soft: #fff7ed;
+  --color-add-border: #fed7aa;
+  --color-add-text: #9a3412;
+  --color-add-solid: #ea580c;
+  --color-review-soft: #ecfdf5;
+  --color-review-border: #a7f3d0;
+  --color-review-text: #047857;
+  --color-review-solid: #0f766e;
+  --color-success-soft: #ecfdf5;
+  --color-success-border: #a7f3d0;
+  --color-success-text: #047857;
+  --color-success-solid: #0f766e;
+  --color-warning-soft: #fffbeb;
+  --color-warning-border: #fde68a;
+  --color-warning-text: #92400e;
+  --color-warning-solid: #d97706;
+  --color-danger-soft: #fff1f2;
+  --color-danger-border: #fecdd3;
+  --color-danger-text: #be123c;
+  --color-danger-solid: #be123c;
+  --color-info-soft: #eef2ff;
+  --color-info-border: #c7d2fe;
+  --color-info-text: #3730a3;
+  --color-info-solid: #4f46e5;
+  --shadow-floating: 0 12px 30px rgba(22, 32, 51, 0.18);
+  --shadow-bottom-bar: 0 -10px 24px rgba(22, 32, 51, 0.12);
+  color: var(--color-text);
+  background: var(--color-bg);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
@@ -54,17 +94,17 @@ button:disabled {
 
 input,
 select {
-  background: #ffffff;
-  border: 1px solid #d7dde5;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
-  color: #202833;
+  color: var(--color-text);
   min-height: 42px;
   padding: 0 12px;
   width: 100%;
 }
 
 label {
-  color: #64748b;
+  color: var(--color-muted);
   font-size: 0.82rem;
   font-weight: 700;
 }
@@ -77,8 +117,8 @@ label {
 }
 
 .sidebar {
-  background: #182236;
-  color: #f8fafc;
+  background: var(--color-sidebar);
+  color: var(--color-sidebar-text);
   padding: 24px 16px;
 }
 
@@ -97,13 +137,13 @@ label {
 
 .nav button {
   background: transparent;
-  color: #f8fafc;
+  color: var(--color-sidebar-text);
   justify-content: flex-start;
 }
 
 .nav button.active,
 .nav button:hover {
-  background: #31435f;
+  background: var(--color-sidebar-active);
 }
 
 .main {
@@ -139,12 +179,12 @@ label {
 .page-subtitle,
 .empty p,
 .inline-notice p {
-  color: #64748b;
+  color: var(--color-muted);
   margin: 8px 0 0;
 }
 
 .eyebrow {
-  color: #58708f;
+  color: var(--color-info-text);
   font-size: 0.78rem;
   font-weight: 800;
   letter-spacing: 0;
@@ -158,15 +198,31 @@ label {
 .generated-card button,
 .review-actions button,
 .load-more {
-  background: #1d4ed8;
-  color: #ffffff;
+  background: var(--color-primary-solid);
+  color: var(--color-surface);
+}
+
+.review-action,
+.actions button.review-action {
+  background: var(--color-review-solid);
+  border-color: var(--color-review-solid);
+  color: var(--color-surface);
+}
+
+.add-action,
+.actions button.add-action,
+.inline-form button,
+.generated-card button {
+  background: var(--color-add-solid);
+  border-color: var(--color-add-solid);
+  color: var(--color-surface);
 }
 
 .secondary-action,
 .actions button.secondary-action {
-  background: #eef4ff;
-  border-color: #c7d7fe;
-  color: #1e3a8a;
+  background: var(--color-primary-soft);
+  border-color: var(--color-primary-border);
+  color: var(--color-primary-text);
 }
 
 .stats-grid {
@@ -183,8 +239,8 @@ label {
 .empty,
 .trend,
 .inline-notice {
-  background: #ffffff;
-  border: 1px solid #e0e5ec;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
 }
 
@@ -195,7 +251,7 @@ label {
 }
 
 .stat span {
-  color: #64748b;
+  color: var(--color-muted);
 }
 
 .stat strong {
@@ -219,17 +275,17 @@ label {
 }
 
 .bar {
-  background: #15803d;
+  background: var(--color-review-solid);
   border-radius: 5px 5px 0 0;
   width: 100%;
 }
 
 .bar.empty-bar {
-  background: #d7dde5;
+  background: var(--color-border);
 }
 
 .bar-wrap span {
-  color: #64748b;
+  color: var(--color-muted);
   font-size: 0.8rem;
 }
 
@@ -247,7 +303,7 @@ label {
 
 .section-open {
   background: transparent;
-  color: #202833;
+  color: var(--color-text);
   justify-content: space-between;
   padding: 0;
 }
@@ -258,7 +314,7 @@ label {
 }
 
 .section-metrics {
-  color: #64748b;
+  color: var(--color-muted);
   display: flex;
   flex-wrap: wrap;
   gap: 8px 14px;
@@ -266,7 +322,7 @@ label {
 
 .section-card p,
 .detail-header p {
-  color: #64748b;
+  color: var(--color-muted);
   margin: 0;
 }
 
@@ -290,8 +346,8 @@ label {
 }
 
 .done-pill {
-  background: #ecfdf3;
-  color: #166534;
+  background: var(--color-success-soft);
+  color: var(--color-success-text);
 }
 
 .status-pill {
@@ -299,30 +355,30 @@ label {
 }
 
 .status-pill.new {
-  background: #eff6ff;
-  color: #1d4ed8;
+  background: var(--color-info-soft);
+  color: var(--color-info-text);
 }
 
 .status-pill.due {
-  background: #fff1f2;
-  color: #be123c;
+  background: var(--color-warning-soft);
+  color: var(--color-warning-text);
 }
 
 .status-pill.review {
-  background: #ecfdf3;
-  color: #166534;
+  background: var(--color-review-soft);
+  color: var(--color-review-text);
 }
 
 .offline-badge {
-  background: #fff7ed;
-  color: #c2410c;
+  background: var(--color-warning-soft);
+  color: var(--color-warning-text);
 }
 
 .actions button.danger,
 .icon-danger {
-  background: #fff1f2;
-  border-color: #fecdd3;
-  color: #be123c;
+  background: var(--color-danger-soft);
+  border-color: var(--color-danger-border);
+  color: var(--color-danger-text);
 }
 
 .split {
@@ -365,8 +421,8 @@ label {
 }
 
 .section-menu button {
-  background: #f8fafc;
-  color: #202833;
+  background: var(--color-surface-muted);
+  color: var(--color-text);
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   justify-content: stretch;
@@ -380,11 +436,11 @@ label {
 }
 
 .section-menu button small {
-  color: #64748b;
+  color: var(--color-muted);
 }
 
 .section-menu button.active {
-  background: #dbeafe;
+  background: var(--color-primary-soft);
 }
 
 .detail-header {
@@ -406,7 +462,7 @@ label {
 
 .word-row {
   align-items: center;
-  border-bottom: 1px solid #edf1f5;
+  border-bottom: 1px solid var(--color-border);
   display: grid;
   gap: 14px;
   grid-template-columns: 150px minmax(0, 1fr) 88px 76px 42px;
@@ -421,7 +477,7 @@ label {
 
 .word-row span:not(.status-pill),
 .word-row time {
-  color: #64748b;
+  color: var(--color-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -434,7 +490,7 @@ label {
 }
 
 .entry {
-  border-top: 1px solid #edf1f5;
+  border-top: 1px solid var(--color-border);
   display: grid;
   gap: 10px;
   padding-top: 14px;
@@ -446,9 +502,9 @@ label {
 }
 
 .tag {
-  background: #dbeafe;
+  background: var(--color-info-soft);
   border-radius: 999px;
-  color: #1e3a8a;
+  color: var(--color-info-text);
   display: inline-flex;
   font-size: 0.78rem;
   font-weight: 700;
@@ -457,13 +513,13 @@ label {
 }
 
 blockquote {
-  border-left: 3px solid #15803d;
+  border-left: 3px solid var(--color-review-solid);
   margin: 0;
   padding-left: 12px;
 }
 
 blockquote small {
-  color: #64748b;
+  color: var(--color-muted);
   display: block;
   margin-top: 4px;
 }
@@ -499,7 +555,7 @@ blockquote small {
 }
 
 .review-hint {
-  color: #64748b;
+  color: var(--color-muted);
   margin-top: 18px;
 }
 
@@ -529,19 +585,19 @@ blockquote small {
 }
 
 .review-actions .again {
-  background: #b42318;
+  background: var(--color-danger-solid);
 }
 
 .review-actions .hard {
-  background: #b7791f;
+  background: var(--color-warning-solid);
 }
 
 .review-actions .good {
-  background: #15803d;
+  background: var(--color-review-solid);
 }
 
 .review-actions .easy {
-  background: #1d4ed8;
+  background: var(--color-info-solid);
 }
 
 .empty,
@@ -561,17 +617,17 @@ blockquote small {
 }
 
 .alert {
-  background: #fff1f2;
-  border: 1px solid #fecdd3;
+  background: var(--color-danger-soft);
+  border: 1px solid var(--color-danger-border);
   border-radius: 8px;
-  color: #9f1239;
+  color: var(--color-danger-text);
   margin-bottom: 16px;
 }
 
 .toast {
   border-radius: 8px;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.18);
-  color: #ffffff;
+  box-shadow: var(--shadow-floating);
+  color: var(--color-surface);
   font-weight: 800;
   padding: 12px 16px;
   position: fixed;
@@ -581,11 +637,11 @@ blockquote small {
 }
 
 .toast.success {
-  background: #15803d;
+  background: var(--color-success-solid);
 }
 
 .toast.warning {
-  background: #c2410c;
+  background: var(--color-warning-solid);
 }
 
 .inline-notice {
@@ -594,18 +650,18 @@ blockquote small {
 }
 
 .inline-notice.success {
-  background: #f0fdf4;
-  border-color: #bbf7d0;
+  background: var(--color-success-soft);
+  border-color: var(--color-success-border);
 }
 
 .inline-notice.error {
-  background: #fff1f2;
-  border-color: #fecdd3;
+  background: var(--color-danger-soft);
+  border-color: var(--color-danger-border);
 }
 
 .inline-notice.info {
-  background: #eff6ff;
-  border-color: #bfdbfe;
+  background: var(--color-info-soft);
+  border-color: var(--color-info-border);
 }
 
 .preset-grid {
@@ -616,9 +672,9 @@ blockquote small {
 
 .preset-option {
   align-items: start;
-  background: #f8fafc;
-  border-color: #d7dde5;
-  color: #202833;
+  background: var(--color-surface-muted);
+  border-color: var(--color-border);
+  color: var(--color-text);
   display: grid;
   justify-content: stretch;
   min-height: 132px;
@@ -631,18 +687,18 @@ blockquote small {
 }
 
 .preset-option span {
-  color: #1d4ed8;
+  color: var(--color-info-solid);
   font-size: 1.7rem;
   font-weight: 800;
 }
 
 .preset-option small {
-  color: #64748b;
+  color: var(--color-muted);
 }
 
 .preset-option.active {
-  background: #dbeafe;
-  border-color: #60a5fa;
+  background: var(--color-info-soft);
+  border-color: var(--color-info-solid);
 }
 
 .spin {
@@ -729,10 +785,10 @@ blockquote small {
   }
 
   .review-actions {
-    background: rgba(246, 247, 249, 0.96);
-    border-top: 1px solid #d7dde5;
+    background: color-mix(in srgb, var(--color-bg) 96%, transparent);
+    border-top: 1px solid var(--color-border);
     bottom: 0;
-    box-shadow: 0 -10px 24px rgba(15, 23, 42, 0.12);
+    box-shadow: var(--shadow-bottom-bar);
     grid-template-columns: repeat(2, minmax(0, 1fr));
     left: 0;
     padding: 10px 18px calc(10px + env(safe-area-inset-bottom));

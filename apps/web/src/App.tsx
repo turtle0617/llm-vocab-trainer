@@ -29,7 +29,7 @@ import {
 
 type View = "dashboard" | "sections" | "add" | "review" | "settings";
 type ToastState = { message: string; tone?: "success" | "warning" };
-type EmptyAction = { label: string; onClick: () => void; variant?: "primary" | "secondary" };
+type EmptyAction = { label: string; onClick: () => void; variant?: "primary" | "secondary" | "review" | "add" };
 
 export function App() {
   const [view, setView] = useState<View>("dashboard");
@@ -220,7 +220,16 @@ function Dashboard({
           <h1>今日複習</h1>
           <p className="page-subtitle">{action.description}</p>
         </div>
-        <button className={action.kind === "done" ? "secondary-action" : "primary-action"} onClick={primaryAction}>
+        <button
+          className={
+            action.kind === "done"
+              ? "secondary-action"
+              : action.kind === "review"
+                ? "review-action"
+                : "add-action"
+          }
+          onClick={primaryAction}
+        >
           {action.kind === "review" ? <RotateCcw size={18} /> : <Plus size={18} />}
           {action.label}
         </button>
@@ -377,11 +386,11 @@ function Sections({
                   <p>{selected.totalCards} words · {selected.dueToday} due today</p>
                 </div>
                 <div className="actions section-actions">
-                  <button onClick={onAdd}>
+                  <button className="add-action" onClick={onAdd}>
                     <Plus size={17} />
                     <span className="button-label">Add</span>
                   </button>
-                  <button className={selected.dueToday > 0 ? "" : "secondary-action"} onClick={onReview}>
+                  <button className={selected.dueToday > 0 ? "review-action" : "secondary-action"} onClick={onReview}>
                     <RotateCcw size={17} />
                     <span className="button-label">Review</span>
                   </button>
@@ -500,7 +509,7 @@ function AddWord({
           title={success}
           actions={[
             { label: "繼續新增", onClick: () => setSuccess("") },
-            { label: "開始複習", onClick: () => onReview(selectedSectionId), variant: "primary" }
+            { label: "開始複習", onClick: () => onReview(selectedSectionId), variant: "review" }
           ]}
         />
       )}
@@ -725,11 +734,11 @@ function SectionList({
           </div>
           <div className="actions">
             {section.dueToday > 0 ? (
-              <button onClick={() => onReview(section.id)}><RotateCcw size={16} /> Review</button>
+              <button className="review-action" onClick={() => onReview(section.id)}><RotateCcw size={16} /> Review</button>
             ) : (
               <span className="done-pill"><CheckCircle2 size={15} /> Done</span>
             )}
-            <button className="secondary-action" onClick={() => onAdd(section.id)}><Plus size={16} /> Add</button>
+            <button className="add-action" onClick={() => onAdd(section.id)}><Plus size={16} /> Add</button>
           </div>
         </article>
       ))}
@@ -860,7 +869,7 @@ function EmptyState({
       {description && <p>{description}</p>}
       {(primaryAction || secondaryAction) && (
         <div className="actions">
-          {primaryAction && <button className={primaryAction.variant === "secondary" ? "secondary-action" : ""} onClick={primaryAction.onClick}>{primaryAction.label}</button>}
+          {primaryAction && <button className={actionClassName(primaryAction.variant)} onClick={primaryAction.onClick}>{primaryAction.label}</button>}
           {secondaryAction && <button className="secondary-action" onClick={secondaryAction.onClick}>{secondaryAction.label}</button>}
         </div>
       )}
@@ -905,7 +914,7 @@ function InlineNotice({
           {actions.map((action) => (
             <button
               key={action.label}
-              className={action.variant === "primary" ? "" : "secondary-action"}
+              className={actionClassName(action.variant)}
               onClick={action.onClick}
             >
               {action.label}
@@ -926,6 +935,13 @@ const ratingButtons = [
 
 function formatDueDate(value: string) {
   return new Date(value).toLocaleDateString("zh-TW", { month: "numeric", day: "numeric" });
+}
+
+function actionClassName(variant: EmptyAction["variant"]) {
+  if (variant === "secondary") return "secondary-action";
+  if (variant === "review") return "review-action";
+  if (variant === "add") return "add-action";
+  return "primary-action";
 }
 
 function formatAppError(error: unknown) {
