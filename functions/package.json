@@ -6,7 +6,7 @@
   "main": "lib/index.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "serve": "npm run build && firebase emulators:start --only functions,firestore,hosting",
+    "serve": "npm run build && firebase emulators:start --only functions,firestore,hosting,auth",
     "test": "vitest run"
   },
   "dependencies": {

@@ -52,4 +52,16 @@ describe("shared schemas", () => {
   it("normalizes word input spacing", () => {
     expect(normalizeWordInput("  look   up  ")).toBe("look up");
   });
+
+  it("models client generated review ids", () => {
+    const request = {
+      clientReviewId: "review-1",
+      cardId: "card-1",
+      sectionId: "section-1",
+      rating: ReviewRating.Good,
+      reviewedAt: "2026-05-10T00:00:00.000Z"
+    };
+
+    expect(request.clientReviewId).toBe("review-1");
+  });
 });
