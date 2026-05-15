@@ -12,7 +12,6 @@ import {
 } from "@vocab/shared";
 import { decodeCursor, encodeCursor } from "./pagination.js";
 
-const settingsDocId = "global";
 const defaultReviewIntensity: ReviewIntensity = "standard";
 const archiveBatchSize = 450;
 
@@ -44,21 +43,22 @@ export async function createSection(db: Firestore, body: CreateSectionRequest, o
   return mapSection(ref.id, section);
 }
 
-export async function getSectionSummaries(db: Firestore): Promise<SectionSummary[]> {
+export async function getSectionSummaries(db: Firestore, ownerUid: string): Promise<SectionSummary[]> {
   const snapshot = await db
     .collection("sections")
+    .where("ownerUid", "==", ownerUid)
     .where("archivedAt", "==", null)
     .orderBy("createdAt", "desc")
     .get();
-  return Promise.all(snapshot.docs.map(async (doc) => hydrateSectionSummary(db, doc.id, doc.data())));
+  return Promise.all(snapshot.docs.map(async (doc) => hydrateSectionSummary(db, doc.id, doc.data(), ownerUid)));
 }
 
-export async function getDashboard(db: Firestore): Promise<DashboardResponse> {
-  const sections = await getSectionSummaries(db);
+export async function getDashboard(db: Firestore, ownerUid: string): Promise<DashboardResponse> {
+  const sections = await getSectionSummaries(db, ownerUid);
   const totalCards = sections.reduce((sum, section) => sum + section.totalCards, 0);
   const dueToday = sections.reduce((sum, section) => sum + section.dueToday, 0);
   const reviewedToday = sections.reduce((sum, section) => sum + section.reviewedToday, 0);
-  const reviewTrend = await getReviewTrend(db);
+  const reviewTrend = await getReviewTrend(db, ownerUid);
 
   return {
     totals: {
@@ -72,8 +72,8 @@ export async function getDashboard(db: Firestore): Promise<DashboardResponse> {
   };
 }
 
-export async function getSettings(db: Firestore): Promise<AppSettings> {
-  const snapshot = await db.collection("settings").doc(settingsDocId).get();
+export async function getSettings(db: Firestore, ownerUid: string): Promise<AppSettings> {
+  const snapshot = await db.collection("settings").doc(ownerUid).get();
   if (!snapshot.exists) return createSettings(defaultReviewIntensity, new Date().toISOString());
 
   const data = snapshot.data() ?? {};
@@ -83,7 +83,8 @@ export async function getSettings(db: Firestore): Promise<AppSettings> {
 
 export async function updateSettings(db: Firestore, reviewIntensity: ReviewIntensity, ownerUid?: string): Promise<AppSettings> {
   const settings = createSettings(reviewIntensity, new Date().toISOString());
-  await db.collection("settings").doc(settingsDocId).set({ ...settings, ownerUid: ownerUid ?? null }, { merge: true });
+  if (!ownerUid) throw new RepositoryError(401, "Authentication is required.");
+  await db.collection("settings").doc(ownerUid).set({ ...settings, ownerUid }, { merge: true });
   return settings;
 }
 
@@ -94,7 +95,7 @@ export async function createCard(db: Firestore, body: CreateCardRequest, fsrs: u
   await db.runTransaction(async (transaction) => {
     const sectionRef = db.collection("sections").doc(body.sectionId);
     const sectionSnapshot = await transaction.get(sectionRef);
-    if (!sectionSnapshot.exists || sectionSnapshot.get("archivedAt")) {
+    if (!sectionSnapshot.exists || sectionSnapshot.get("archivedAt") || sectionSnapshot.get("ownerUid") !== ownerUid) {
       throw new RepositoryError(400, "Section is not available.");
     }
 
@@ -121,11 +122,12 @@ export async function createCard(db: Firestore, body: CreateCardRequest, fsrs: u
   return { id: ref.id };
 }
 
-export async function deleteSection(db: Firestore, sectionId: string) {
+export async function deleteSection(db: Firestore, sectionId: string, ownerUid: string) {
   const now = new Date().toISOString();
   const ref = db.collection("sections").doc(sectionId);
   const snapshot = await ref.get();
   if (!snapshot.exists) throw new RepositoryError(404, "Section was not found.");
+  if (snapshot.get("ownerUid") !== ownerUid) throw new RepositoryError(404, "Section was not found.");
   if (snapshot.get("archivedAt")) return { id: sectionId, archivedAt: snapshot.get("archivedAt") as string, archivedCards: 0 };
   await ref.update({ archivedAt: now, updatedAt: now });
 
@@ -134,6 +136,7 @@ export async function deleteSection(db: Firestore, sectionId: string) {
   while (true) {
     let query = db
       .collection("cards")
+      .where("ownerUid", "==", ownerUid)
       .where("sectionId", "==", sectionId)
       .orderBy("__name__")
       .limit(archiveBatchSize)
@@ -156,13 +159,14 @@ export async function deleteSection(db: Firestore, sectionId: string) {
   return { id: sectionId, archivedAt: now, archivedCards };
 }
 
-export async function deleteCard(db: Firestore, input: { sectionId: string; cardId: string }) {
+export async function deleteCard(db: Firestore, input: { sectionId: string; cardId: string; ownerUid: string }) {
   await db.runTransaction(async (transaction) => {
     const ref = db.collection("cards").doc(input.cardId);
     const snapshot = await transaction.get(ref);
     if (!snapshot.exists || snapshot.get("archivedAt")) throw new RepositoryError(404, "Card was not found.");
 
     const card = snapshot.data()!;
+    if (card.ownerUid !== input.ownerUid) throw new RepositoryError(404, "Card was not found.");
     if (card.sectionId !== input.sectionId) throw new RepositoryError(400, "Card does not belong to section.");
 
     transaction.update(ref, {
@@ -179,15 +183,17 @@ export async function deleteCard(db: Firestore, input: { sectionId: string; card
 
 export async function getCardsPage(
   db: Firestore,
-  query: { sectionId: string; dueBefore?: string; limit: number; cursor?: string }
+  query: { sectionId: string; dueBefore?: string; limit: number; cursor?: string },
+  ownerUid: string
 ) {
   const section = await db.collection("sections").doc(query.sectionId).get();
-  if (!section.exists || section.get("archivedAt")) {
+  if (!section.exists || section.get("archivedAt") || section.get("ownerUid") !== ownerUid) {
     return { items: [], nextCursor: null, hasMore: false };
   }
 
   let ref = db
     .collection("cards")
+    .where("ownerUid", "==", ownerUid)
     .where("sectionId", "==", query.sectionId)
     .where("suspendedAt", "==", null)
     .orderBy("due", "asc")
@@ -246,25 +252,39 @@ export async function writeReview(
   });
 }
 
-export async function getExistingReviewByClientId(db: Firestore, transaction: Transaction, clientReviewId: string) {
+export async function getExistingReviewByClientId(
+  db: Firestore,
+  transaction: Transaction,
+  clientReviewId: string,
+  ownerUid: string
+) {
   const snapshot = await transaction.get(
-    db.collection("reviewLogs").where("clientReviewId", "==", clientReviewId).limit(1)
+    db.collection("reviewLogs").where("ownerUid", "==", ownerUid).where("clientReviewId", "==", clientReviewId).limit(1)
   );
   const doc = snapshot.docs[0];
   if (!doc) return null;
   return { nextDue: String(doc.get("nextDue")) };
 }
 
-export async function assertCardReviewable(db: Firestore, transaction: Transaction, cardId: string, sectionId: string) {
+export async function assertCardReviewable(
+  db: Firestore,
+  transaction: Transaction,
+  cardId: string,
+  sectionId: string,
+  ownerUid: string
+) {
   const cardRef = db.collection("cards").doc(cardId);
   const snapshot = await transaction.get(cardRef);
   if (!snapshot.exists || snapshot.get("archivedAt")) throw new RepositoryError(404, "Card was not found.");
 
   const card = snapshot.data()!;
+  if (card.ownerUid !== ownerUid) throw new RepositoryError(404, "Card was not found.");
   if (card.sectionId !== sectionId) throw new RepositoryError(400, "Card does not belong to section.");
 
   const sectionSnapshot = await transaction.get(db.collection("sections").doc(sectionId));
-  if (!sectionSnapshot.exists || sectionSnapshot.get("archivedAt")) throw new RepositoryError(404, "Section was not found.");
+  if (!sectionSnapshot.exists || sectionSnapshot.get("archivedAt") || sectionSnapshot.get("ownerUid") !== ownerUid) {
+    throw new RepositoryError(404, "Section was not found.");
+  }
 
   return { ref: cardRef, data: card };
 }
@@ -283,13 +303,19 @@ function mapSection(id: string, data: DocumentData): SectionSummary {
   };
 }
 
-async function hydrateSectionSummary(db: Firestore, id: string, data: DocumentData): Promise<SectionSummary> {
+async function hydrateSectionSummary(db: Firestore, id: string, data: DocumentData, ownerUid: string): Promise<SectionSummary> {
   const now = new Date().toISOString();
   const today = `${now.slice(0, 10)}T00:00:00.000Z`;
   const [totalCards, dueToday, reviewedToday] = await Promise.all([
-    db.collection("cards").where("sectionId", "==", id).get(),
-    db.collection("cards").where("sectionId", "==", id).where("due", "<=", now).get(),
-    db.collection("reviewLogs").where("sectionId", "==", id).where("reviewedAt", ">=", today).count().get()
+    db.collection("cards").where("ownerUid", "==", ownerUid).where("sectionId", "==", id).get(),
+    db.collection("cards").where("ownerUid", "==", ownerUid).where("sectionId", "==", id).where("due", "<=", now).get(),
+    db
+      .collection("reviewLogs")
+      .where("ownerUid", "==", ownerUid)
+      .where("sectionId", "==", id)
+      .where("reviewedAt", ">=", today)
+      .count()
+      .get()
   ]);
 
   return {
@@ -315,14 +341,14 @@ function mapCard(id: string, data: DocumentData): VocabCard {
   };
 }
 
-async function getReviewTrend(db: Firestore) {
+async function getReviewTrend(db: Firestore, ownerUid: string) {
   const days = Array.from({ length: 7 }, (_, index) => {
     const date = new Date();
     date.setDate(date.getDate() - (6 - index));
     return date.toISOString().slice(0, 10);
   });
   const start = `${days[0]}T00:00:00.000Z`;
-  const snapshot = await db.collection("reviewLogs").where("reviewedAt", ">=", start).get();
+  const snapshot = await db.collection("reviewLogs").where("ownerUid", "==", ownerUid).where("reviewedAt", ">=", start).get();
   const counts = new Map(days.map((day) => [day, 0]));
   snapshot.docs.forEach((doc) => {
     const day = String(doc.get("reviewedAt")).slice(0, 10);

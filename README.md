@@ -11,7 +11,7 @@
 - Paginated card loading to avoid fetching an entire deck at once.
 - Delete decks and delete individual cards.
 - PWA build with offline app shell and IndexedDB cache/queue scaffolding.
-- Email/password sign-in through Firebase Auth, guarded by a single allowed user UID.
+- Email/password sign-in through Firebase Auth, with per-user Firestore data isolation.
 - Offline review queue that syncs after reconnecting or signing in again.
 - Switchable LLM providers: OpenRouter, Groq, and Gemini.
 
@@ -58,7 +58,6 @@ LLM_MODEL=meta-llama/llama-4-maverick:free
 LLM_API_KEY=
 LLM_DEBUG_LOGS=false
 ALLOWED_ORIGINS=http://localhost:5173
-ALLOWED_USER_UID=
 AUTH_DISABLED_FOR_DEV=false
 VITE_API_BASE_URL=http://127.0.0.1:5001/YOUR_PROJECT_ID/us-central1/api/api
 VITE_FIREBASE_API_KEY=
@@ -92,7 +91,6 @@ LLM_PROVIDER=groq
 LLM_MODEL=llama-3.3-70b-versatile
 LLM_DEBUG_LOGS=false
 ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
-ALLOWED_USER_UID=<firebase-auth-user-uid>
 AUTH_DISABLED_FOR_DEV=false
 ```
 
@@ -170,7 +168,7 @@ firebase use --add
 
 Enable Cloud Firestore in Firebase Console. Use production mode. This project does not let the browser access Firestore directly; all database writes go through Firebase Functions.
 
-Enable Firebase Authentication and the Email/Password provider. Create the one account that should be allowed to use the app, then copy that user's UID into `ALLOWED_USER_UID`.
+Enable Firebase Authentication and the Email/Password provider. Any signed-in Firebase user can use the app; API reads and writes are scoped by that user's Firebase UID.
 
 For local development with the Auth emulator, create the same test user in the Emulator UI or by using Firebase tooling. You can set `AUTH_DISABLED_FOR_DEV=true` only while running the Functions emulator; production Functions reject this shortcut and require a valid Firebase ID token.
 
@@ -210,7 +208,7 @@ Collections:
 - `reviewLogs`: review history
 - `settings`: app-level settings
 
-New writes include `ownerUid` for future multi-user support. Sections and cards use `archivedAt` for soft deletion, and review logs include `clientReviewId` so retried offline reviews are idempotent.
+New writes include `ownerUid` for per-user data isolation. Sections and cards use `archivedAt` for soft deletion, and review logs include `clientReviewId` so retried offline reviews are idempotent.
 
 The browser is blocked from direct Firestore access by `firestore.rules`:
 
@@ -234,7 +232,7 @@ Firebase Functions uses the Admin SDK and is not blocked by these rules.
 - `DELETE /api/cards/:cardId?sectionId=<id>`
 - `POST /api/reviews`
 
-Live API requests require `Authorization: Bearer <Firebase ID token>`. Missing, invalid, or expired tokens return `401`; tokens for any UID other than `ALLOWED_USER_UID` return `403`.
+Live API requests require `Authorization: Bearer <Firebase ID token>`. Missing, invalid, or expired tokens return `401`. Valid Firebase users can use the API, and data is scoped by token UID.
 
 `POST /api/reviews` requires a client-generated `clientReviewId`. If the same review is retried after reconnecting, the backend returns the original `nextDue` without applying FSRS a second time.
 
@@ -297,7 +295,7 @@ Set the production LLM secret:
 firebase functions:secrets:set LLM_API_KEY
 ```
 
-Set `ALLOWED_USER_UID` in the Functions runtime environment used by your deployment flow.
+No production allow-list UID is required. Access is controlled by Firebase Auth and per-user `ownerUid` scoping in Functions.
 
 Build and deploy:
 
@@ -323,7 +321,7 @@ npm run deploy         # firebase deploy
 - Never commit `.env.local`, `.secret.local`, Firebase debug logs, or service account files.
 - The frontend should not contain LLM API keys.
 - Firestore is intentionally accessed through Functions, not directly from the browser.
-- Live Functions require Firebase Auth ID tokens and only allow `ALLOWED_USER_UID`.
+- Live Functions require Firebase Auth ID tokens and scope Firestore data by token UID.
 - The frontend never stores the email/password. Firebase Auth manages the session and token refresh.
 - Offline pending reviews remain in IndexedDB when a token expires; after the next successful login, the app syncs them before refreshing the dashboard.
 - Keep `LLM_DEBUG_LOGS=false` in production.

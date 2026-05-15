@@ -10,7 +10,6 @@ vi.mock("firebase-admin/auth", () => ({
 describe("auth middleware", () => {
   beforeEach(() => {
     verifyIdToken.mockReset();
-    process.env.ALLOWED_USER_UID = "allowed-user";
     delete process.env.AUTH_DISABLED_FOR_DEV;
     delete process.env.FUNCTIONS_EMULATOR;
   });
@@ -36,19 +35,8 @@ describe("auth middleware", () => {
     expect(next.mock.calls[0]?.[0]).toMatchObject({ status: 401 });
   });
 
-  it("rejects valid tokens from the wrong user", async () => {
-    verifyIdToken.mockResolvedValue({ uid: "other-user" });
-    const { authMiddleware } = await import("./auth.js");
-    const next = vi.fn();
-
-    authMiddleware(req("Bearer valid"), res(), next);
-    await flushPromises();
-
-    expect(next.mock.calls[0]?.[0]).toMatchObject({ status: 403 });
-  });
-
-  it("attaches auth context for the allowed user", async () => {
-    verifyIdToken.mockResolvedValue({ uid: "allowed-user" });
+  it("attaches auth context for any valid Firebase user", async () => {
+    verifyIdToken.mockResolvedValue({ uid: "firebase-user" });
     const { authMiddleware } = await import("./auth.js");
     const response = res();
     const next = vi.fn();
@@ -56,7 +44,7 @@ describe("auth middleware", () => {
     authMiddleware(req("Bearer valid"), response, next);
     await flushPromises();
 
-    expect(response.locals.auth).toEqual({ uid: "allowed-user" });
+    expect(response.locals.auth).toEqual({ uid: "firebase-user" });
     expect(next).toHaveBeenCalledWith();
   });
 });

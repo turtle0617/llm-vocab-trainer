@@ -61,7 +61,8 @@ app.use("/api", authMiddleware);
 
 app.get("/api/dashboard", async (_req, res, next) => {
   try {
-    res.json(await getDashboard(db));
+    const auth = getAuthContext(res);
+    res.json(await getDashboard(db, auth.uid));
   } catch (error) {
     next(error);
   }
@@ -69,7 +70,8 @@ app.get("/api/dashboard", async (_req, res, next) => {
 
 app.get("/api/sections", async (_req, res, next) => {
   try {
-    res.json(await getSectionSummaries(db));
+    const auth = getAuthContext(res);
+    res.json(await getSectionSummaries(db, auth.uid));
   } catch (error) {
     next(error);
   }
@@ -77,7 +79,8 @@ app.get("/api/sections", async (_req, res, next) => {
 
 app.get("/api/settings", async (_req, res, next) => {
   try {
-    res.json(await getSettings(db));
+    const auth = getAuthContext(res);
+    res.json(await getSettings(db, auth.uid));
   } catch (error) {
     next(error);
   }
@@ -117,8 +120,9 @@ app.post("/api/sections", async (req, res, next) => {
 
 app.delete("/api/sections/:sectionId", async (req, res, next) => {
   try {
+    const auth = getAuthContext(res);
     const params = z.object({ sectionId: z.string().trim().min(1) }).parse(req.params);
-    res.json(await deleteSection(db, params.sectionId));
+    res.json(await deleteSection(db, params.sectionId, auth.uid));
   } catch (error) {
     next(error);
   }
@@ -167,9 +171,10 @@ app.post("/api/cards", async (req, res, next) => {
 
 app.delete("/api/cards/:cardId", async (req, res, next) => {
   try {
+    const auth = getAuthContext(res);
     const params = z.object({ cardId: z.string().trim().min(1) }).parse(req.params);
     const query = z.object({ sectionId: z.string().trim().min(1) }).parse(req.query);
-    res.json(await deleteCard(db, { cardId: params.cardId, sectionId: query.sectionId }));
+    res.json(await deleteCard(db, { cardId: params.cardId, sectionId: query.sectionId, ownerUid: auth.uid }));
   } catch (error) {
     next(error);
   }
@@ -177,6 +182,7 @@ app.delete("/api/cards/:cardId", async (req, res, next) => {
 
 app.get("/api/cards", async (req, res, next) => {
   try {
+    const auth = getAuthContext(res);
     const query = z
       .object({
         sectionId: z.string().trim().min(1),
@@ -187,7 +193,7 @@ app.get("/api/cards", async (req, res, next) => {
       .strict()
       .parse(req.query);
 
-    res.json(await getCardsPage(db, query));
+    res.json(await getCardsPage(db, query, auth.uid));
   } catch (error) {
     next(error);
   }
@@ -207,12 +213,12 @@ app.post("/api/reviews", async (req, res, next) => {
       .strict()
       .parse(req.body) satisfies CreateReviewRequest;
 
-    const settings = await getSettings(db);
+    const settings = await getSettings(db, auth.uid);
     const result = await db.runTransaction(async (transaction) => {
-      const existing = await getExistingReviewByClientId(db, transaction, body.clientReviewId);
+      const existing = await getExistingReviewByClientId(db, transaction, body.clientReviewId, auth.uid);
       if (existing) return { due: existing.nextDue };
 
-      const card = await assertCardReviewable(db, transaction, body.cardId, body.sectionId);
+      const card = await assertCardReviewable(db, transaction, body.cardId, body.sectionId, auth.uid);
       if (!isReviewRating(body.rating)) throw new HttpError(400, "Invalid review rating.");
 
       const scheduled = scheduleReview(card.data.fsrs, body.rating, new Date(body.reviewedAt), {

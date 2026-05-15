@@ -30,19 +30,13 @@ export function getAuthContext(res: Response): AuthContext {
 }
 
 async function verifyRequestAuth(req: Request): Promise<AuthContext> {
-  if (isDevAuthDisabled()) return { uid: process.env.ALLOWED_USER_UID ?? "dev-user" };
-
-  const allowedUserUid = process.env.ALLOWED_USER_UID;
-  if (!allowedUserUid) {
-    throw new AuthError(500, "ALLOWED_USER_UID is not configured.");
-  }
+  if (isDevAuthDisabled()) return { uid: "dev-user" };
 
   const token = parseBearerToken(req.header("authorization"));
   if (!token) throw new AuthError(401, "Authentication is required.");
 
   try {
     const decoded = await getAuth().verifyIdToken(token);
-    if (decoded.uid !== allowedUserUid) throw new AuthError(403, "This account is not allowed.");
     return { uid: decoded.uid };
   } catch (error) {
     if (error instanceof AuthError) throw error;
