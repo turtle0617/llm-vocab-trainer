@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ReviewRating } from "@vocab/shared";
 
 const authMock = vi.hoisted(() => ({
-  getAuthStatus: vi.fn()
+  getAuthStatus: vi.fn(),
+  getCurrentUserUid: vi.fn()
 }));
 const apiMock = vi.hoisted(() => ({
   ApiAuthError: class ApiAuthError extends Error {},
@@ -22,6 +23,7 @@ vi.mock("./offline", () => offlineMock);
 describe("pending review sync", () => {
   beforeEach(() => {
     authMock.getAuthStatus.mockReturnValue("authenticated");
+    authMock.getCurrentUserUid.mockReturnValue("user-a");
     apiMock.api.review.mockReset();
     offlineMock.getPendingReviews.mockReset();
     offlineMock.removePendingReview.mockReset();
@@ -29,6 +31,15 @@ describe("pending review sync", () => {
 
   it("skips syncing when the user is not authenticated", async () => {
     authMock.getAuthStatus.mockReturnValue("requiresLogin");
+    const { syncPendingReviews } = await import("./sync");
+
+    await expect(syncPendingReviews()).resolves.toEqual({ status: "skipped", synced: 0 });
+
+    expect(offlineMock.getPendingReviews).not.toHaveBeenCalled();
+  });
+
+  it("skips syncing when the current user id is unavailable", async () => {
+    authMock.getCurrentUserUid.mockReturnValue(null);
     const { syncPendingReviews } = await import("./sync");
 
     await expect(syncPendingReviews()).resolves.toEqual({ status: "skipped", synced: 0 });
@@ -44,6 +55,7 @@ describe("pending review sync", () => {
 
     await expect(syncPendingReviews()).resolves.toEqual({ status: "complete", synced: 2 });
 
+    expect(offlineMock.getPendingReviews).toHaveBeenCalledWith("user-a");
     expect(apiMock.api.review).toHaveBeenNthCalledWith(1, {
       clientReviewId: "review-1",
       cardId: "card-1",
@@ -83,6 +95,7 @@ function pending(clientReviewId: string) {
     sectionId: "section-1",
     rating: ReviewRating.Good,
     reviewedAt: "2026-05-10T00:00:00.000Z",
-    queuedAt: `2026-05-10T00:00:0${clientReviewId.at(-1)}.000Z`
+    queuedAt: `2026-05-10T00:00:0${clientReviewId.at(-1)}.000Z`,
+    ownerUid: "user-a"
   };
 }

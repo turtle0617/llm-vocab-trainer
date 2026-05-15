@@ -196,6 +196,7 @@ export async function getCardsPage(
     .where("ownerUid", "==", ownerUid)
     .where("sectionId", "==", query.sectionId)
     .where("suspendedAt", "==", null)
+    .where("archivedAt", "==", null)
     .orderBy("due", "asc")
     .orderBy("createdAt", "asc")
     .orderBy("__name__", "asc");
@@ -207,7 +208,7 @@ export async function getCardsPage(
   }
 
   const snapshot = await ref.limit(query.limit + 1).get();
-  const docs = snapshot.docs.filter((doc) => !doc.get("archivedAt")).slice(0, query.limit);
+  const docs = snapshot.docs.slice(0, query.limit);
   const lastRaw = snapshot.docs.slice(0, query.limit).at(-1);
 
   return {
@@ -307,8 +308,15 @@ async function hydrateSectionSummary(db: Firestore, id: string, data: DocumentDa
   const now = new Date().toISOString();
   const today = `${now.slice(0, 10)}T00:00:00.000Z`;
   const [totalCards, dueToday, reviewedToday] = await Promise.all([
-    db.collection("cards").where("ownerUid", "==", ownerUid).where("sectionId", "==", id).get(),
-    db.collection("cards").where("ownerUid", "==", ownerUid).where("sectionId", "==", id).where("due", "<=", now).get(),
+    db.collection("cards").where("ownerUid", "==", ownerUid).where("sectionId", "==", id).where("archivedAt", "==", null).count().get(),
+    db
+      .collection("cards")
+      .where("ownerUid", "==", ownerUid)
+      .where("sectionId", "==", id)
+      .where("archivedAt", "==", null)
+      .where("due", "<=", now)
+      .count()
+      .get(),
     db
       .collection("reviewLogs")
       .where("ownerUid", "==", ownerUid)
@@ -320,8 +328,8 @@ async function hydrateSectionSummary(db: Firestore, id: string, data: DocumentDa
 
   return {
     ...mapSection(id, data),
-    totalCards: totalCards.docs.filter((doc) => !doc.get("archivedAt")).length,
-    dueToday: dueToday.docs.filter((doc) => !doc.get("archivedAt")).length,
+    totalCards: totalCards.data().count,
+    dueToday: dueToday.data().count,
     reviewedToday: reviewedToday.data().count
   };
 }

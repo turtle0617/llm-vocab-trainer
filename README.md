@@ -222,7 +222,7 @@ After checking the printed counts, run the write:
 BACKFILL_OWNER_UID=<firebase-auth-user-uid> BACKFILL_OWNER_DRY_RUN=false npm run backfill:owner -w functions
 ```
 
-The backfill updates legacy `sections`, `cards`, and `reviewLogs` that do not have `ownerUid`, and copies `settings/global` to `settings/<uid>`.
+The backfill updates legacy `sections`, `cards`, and `reviewLogs` that do not have `ownerUid`, sets missing `archivedAt` to `null` on sections/cards, and copies `settings/global` to `settings/<uid>`.
 
 The browser is blocked from direct Firestore access by `firestore.rules`:
 

@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase-admin/app";
-import { getFirestore, type DocumentReference, type Firestore } from "firebase-admin/firestore";
+import { getFirestore, type DocumentData, type Firestore, type QueryDocumentSnapshot } from "firebase-admin/firestore";
 
 const collections = ["sections", "cards", "reviewLogs"] as const;
 const batchSize = 450;
@@ -55,9 +55,9 @@ async function backfillCollection(
     const snapshot = await query.get();
     if (snapshot.empty) break;
 
-    const refs = snapshot.docs.filter((doc) => !doc.get("ownerUid")).map((doc) => doc.ref);
-    updated += refs.length;
-    if (!dryRun && refs.length > 0) await updateRefs(db, refs, ownerUid);
+    const docsToUpdate = snapshot.docs.filter((doc) => needsBackfill(collection, doc.data()));
+    updated += docsToUpdate.length;
+    if (!dryRun && docsToUpdate.length > 0) await updateRefs(db, docsToUpdate, collection, ownerUid);
 
     lastDocId = snapshot.docs.at(-1)?.id ?? null;
   }
@@ -87,11 +87,27 @@ async function backfillSettings(db: Firestore, ownerUid: string, dryRun: boolean
   return 1;
 }
 
-async function updateRefs(db: Firestore, refs: DocumentReference[], ownerUid: string) {
-  for (let index = 0; index < refs.length; index += batchSize) {
+function needsBackfill(collection: (typeof collections)[number], data: DocumentData) {
+  if (!data.ownerUid) return true;
+  if ((collection === "sections" || collection === "cards") && !Object.hasOwn(data, "archivedAt")) return true;
+  return false;
+}
+
+async function updateRefs(
+  db: Firestore,
+  docs: Array<QueryDocumentSnapshot<DocumentData>>,
+  collection: (typeof collections)[number],
+  ownerUid: string
+) {
+  for (let index = 0; index < docs.length; index += batchSize) {
     const batch = db.batch();
-    refs.slice(index, index + batchSize).forEach((ref) => {
-      batch.update(ref, { ownerUid });
+    docs.slice(index, index + batchSize).forEach((doc) => {
+      const patch: Record<string, unknown> = {};
+      if (!doc.data().ownerUid) patch.ownerUid = ownerUid;
+      if ((collection === "sections" || collection === "cards") && !Object.hasOwn(doc.data(), "archivedAt")) {
+        patch.archivedAt = null;
+      }
+      batch.update(doc.ref, patch);
     });
     await batch.commit();
   }

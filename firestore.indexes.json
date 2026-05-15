@@ -16,6 +16,7 @@
         { "fieldPath": "ownerUid", "order": "ASCENDING" },
         { "fieldPath": "sectionId", "order": "ASCENDING" },
         { "fieldPath": "suspendedAt", "order": "ASCENDING" },
+        { "fieldPath": "archivedAt", "order": "ASCENDING" },
         { "fieldPath": "due", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "ASCENDING" },
         { "fieldPath": "__name__", "order": "ASCENDING" }
@@ -36,6 +37,7 @@
       "fields": [
         { "fieldPath": "ownerUid", "order": "ASCENDING" },
         { "fieldPath": "sectionId", "order": "ASCENDING" },
+        { "fieldPath": "archivedAt", "order": "ASCENDING" },
         { "fieldPath": "due", "order": "ASCENDING" }
       ]
     },

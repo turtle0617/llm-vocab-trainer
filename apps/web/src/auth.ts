@@ -43,6 +43,11 @@ export async function getIdToken(options: { forceRefresh?: boolean } = {}) {
   return user.getIdToken(options.forceRefresh ?? false);
 }
 
+export function getCurrentUserUid() {
+  if (useMockAuth) return "mock-user";
+  return getFirebaseAuth().currentUser?.uid ?? null;
+}
+
 export function subscribeAuthState(callback: AuthListener) {
   listeners.add(callback);
   callback(status);
@@ -76,8 +81,6 @@ function setStatus(next: AuthStatus) {
 }
 
 function getFirebaseAuth() {
-  console.log(import.meta.env);
-
   if (!auth) {
     app = initializeApp({
       apiKey: requireEnv("VITE_FIREBASE_API_KEY"),

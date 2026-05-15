@@ -23,12 +23,12 @@ export class ApiAuthError extends Error {
 async function request<T>(path: string, init?: RequestInit, hasRetriedAuth = false): Promise<T> {
   const token = USE_MOCK_API ? null : await getIdToken();
   const response = await fetch(`${API_BASE_URL ?? "/api"}${path}`, {
+    ...init,
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(init?.headers ?? {})
-    },
-    ...init
+    }
   });
 
   const contentType = response.headers.get("content-type") ?? "";

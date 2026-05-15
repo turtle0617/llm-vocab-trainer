@@ -1,6 +1,8 @@
 import { openDB, type DBSchema } from "idb";
 import type { CreateReviewRequest, SectionSummary, VocabCard } from "@vocab/shared";
 
+type QueuedReview = CreateReviewRequest & { queuedAt: string; ownerUid?: string };
+
 interface VocabDb extends DBSchema {
   sections: {
     key: string;
@@ -13,21 +15,27 @@ interface VocabDb extends DBSchema {
   };
   pendingReviews: {
     key: string;
-    value: CreateReviewRequest & { queuedAt: string };
+    value: QueuedReview;
+  };
+  pendingReviewQueue: {
+    key: string;
+    value: QueuedReview;
   };
 }
 
-const dbPromise = openDB<VocabDb>("vocab-pwa", 2, {
+const dbPromise = openDB<VocabDb>("vocab-pwa", 3, {
   upgrade(db, oldVersion) {
     if (oldVersion < 1) {
       db.createObjectStore("sections", { keyPath: "id" });
       const cards = db.createObjectStore("cards", { keyPath: "id" });
       cards.createIndex("by-section", "sectionId");
     }
-    if (db.objectStoreNames.contains("pendingReviews")) {
-      db.deleteObjectStore("pendingReviews");
+    if (oldVersion < 2 && !db.objectStoreNames.contains("pendingReviews")) {
+      db.createObjectStore("pendingReviews", { keyPath: "cardId" });
     }
-    db.createObjectStore("pendingReviews", { keyPath: "clientReviewId" });
+    if (!db.objectStoreNames.contains("pendingReviewQueue")) {
+      db.createObjectStore("pendingReviewQueue", { keyPath: "clientReviewId" });
+    }
   }
 });
 
@@ -55,23 +63,50 @@ export async function removeCachedCard(cardId: string) {
   await db.delete("cards", cardId);
 }
 
-export async function queueReview(review: CreateReviewRequest) {
+export async function queueReview(review: CreateReviewRequest, ownerUid?: string | null) {
   const db = await dbPromise;
-  await db.put("pendingReviews", { ...review, queuedAt: new Date().toISOString() });
+  await db.put("pendingReviewQueue", { ...review, ownerUid: ownerUid ?? undefined, queuedAt: new Date().toISOString() });
 }
 
-export async function getPendingReviews() {
+export async function getPendingReviews(ownerUid?: string | null) {
   const db = await dbPromise;
-  const reviews = await db.getAll("pendingReviews");
+  const [legacy, queue] = await Promise.all([
+    db.objectStoreNames.contains("pendingReviews") ? db.getAll("pendingReviews") : Promise.resolve([]),
+    db.getAll("pendingReviewQueue")
+  ]);
+  const reviews = [...legacy, ...queue]
+    .map(normalizeQueuedReview)
+    .filter((review) => !ownerUid || !review.ownerUid || review.ownerUid === ownerUid);
   return reviews.sort((a, b) => a.queuedAt.localeCompare(b.queuedAt));
 }
 
-export async function getPendingReviewCount() {
+export async function getPendingReviewCount(ownerUid?: string | null) {
   const db = await dbPromise;
-  return db.count("pendingReviews");
+  if (!ownerUid) {
+    const [legacy, queue] = await Promise.all([
+      db.objectStoreNames.contains("pendingReviews") ? db.count("pendingReviews") : Promise.resolve(0),
+      db.count("pendingReviewQueue")
+    ]);
+    return legacy + queue;
+  }
+  return (await getPendingReviews(ownerUid)).length;
 }
 
 export async function removePendingReview(clientReviewId: string) {
   const db = await dbPromise;
-  await db.delete("pendingReviews", clientReviewId);
+  await db.delete("pendingReviewQueue", clientReviewId);
+  const legacy = db.objectStoreNames.contains("pendingReviews") ? await db.getAll("pendingReviews") : [];
+  const legacyReview = legacy.map(normalizeQueuedReview).find((review) => review.clientReviewId === clientReviewId);
+  if (legacyReview) {
+    await db.delete("pendingReviews", legacyReview.clientReviewId).catch(() => undefined);
+    await db.delete("pendingReviews", legacyReview.cardId).catch(() => undefined);
+  }
+}
+
+function normalizeQueuedReview(review: QueuedReview): QueuedReview {
+  return {
+    ...review,
+    clientReviewId: review.clientReviewId || `legacy-${review.cardId}-${review.reviewedAt}`,
+    queuedAt: review.queuedAt ?? new Date().toISOString()
+  };
 }

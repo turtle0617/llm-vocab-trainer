@@ -18,7 +18,7 @@ import {
 import type { DashboardResponse, GeneratedWord, SectionSummary, VocabCard } from "@vocab/shared";
 import { ReviewRating } from "@vocab/shared";
 import { api } from "./api";
-import { getAuthStatus, signIn, signOut, subscribeAuthState, type AuthStatus } from "./auth";
+import { getAuthStatus, getCurrentUserUid, signIn, signOut, subscribeAuthState, type AuthStatus } from "./auth";
 import { cacheCards, cacheSections, getCachedCards, getPendingReviewCount, queueReview, removeCachedCard } from "./offline";
 import { syncPendingReviews } from "./sync";
 import {
@@ -108,7 +108,7 @@ export function App() {
     let cancelled = false;
 
     async function refreshPendingCount() {
-      setPendingReviewCount(await getPendingReviewCount());
+      setPendingReviewCount(await getPendingReviewCount(getCurrentUserUid()));
     }
 
     async function loadAuthenticatedApp() {
@@ -778,7 +778,7 @@ function Review({
       const result = await api.review(review);
       notify(formatScheduledFeedback(result.nextDue, reviewedAt));
     } catch {
-      await queueReview(review);
+      await queueReview(review, getCurrentUserUid());
       await removeCachedCard(current.id);
       notify("已離線暫存，登入或連線後同步", "warning");
     }

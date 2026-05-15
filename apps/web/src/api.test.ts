@@ -62,7 +62,10 @@ describe("live API client auth", () => {
     expect(fetch).toHaveBeenLastCalledWith(
       "https://api.example.test/api/reviews",
       expect.objectContaining({
-        headers: expect.objectContaining({ Authorization: "Bearer fresh-token" })
+        headers: expect.objectContaining({
+          Authorization: "Bearer fresh-token",
+          "Content-Type": "application/json"
+        })
       })
     );
   });
