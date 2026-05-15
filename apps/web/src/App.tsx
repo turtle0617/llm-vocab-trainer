@@ -27,6 +27,7 @@ import {
   getCardDueStatus,
   getDashboardAction,
   getPrimarySection,
+  getTrendScale,
   reviewIntensityPresets,
   type ReviewIntensityId
 } from "./ui-logic";
@@ -459,6 +460,7 @@ function Dashboard({
 
   const action = getDashboardAction(dashboard);
   const primarySection = getPrimarySection(dashboard.sections);
+  const trendScale = getTrendScale(dashboard.reviewTrend.map((day) => day.count));
   const primaryAction =
     action.kind === "review"
       ? () => onReview(primarySection?.id)
@@ -494,13 +496,32 @@ function Dashboard({
         <Stat label="連續天數" value={dashboard.totals.streakDays} />
         <Stat label="總單字" value={dashboard.totals.totalCards} />
       </div>
-      <div className="trend" aria-label="最近七天複習量">
-        {dashboard.reviewTrend.map((day) => (
-          <div key={day.date} className="bar-wrap">
-            <div className={`bar ${day.count === 0 ? "empty-bar" : ""}`} style={{ height: `${day.count === 0 ? 2 : Math.max(10, day.count * 12)}px` }} />
-            <span>{day.date.slice(5)}</span>
+      <div className="trend" aria-label="最近七天複習張數">
+        <div className="trend-axis" aria-hidden="true">
+          <span>{trendScale.max}</span>
+          <span>{trendScale.middle}</span>
+          <span>0</span>
+        </div>
+        <div className="trend-bars">
+          <div className="trend-grid" aria-hidden="true">
+            <span />
+            <span />
+            <span />
           </div>
-        ))}
+          {dashboard.reviewTrend.map((day) => (
+            <div key={day.date} className="bar-wrap">
+              <div className="bar-slot">
+                <div
+                  className={`bar ${day.count === 0 ? "empty-bar" : ""}`}
+                  style={{ height: `${day.count === 0 ? 2 : Math.max(10, (day.count / trendScale.max) * 96)}px` }}
+                  title={`${day.date.slice(5)}：${day.count} 張`}
+                />
+              </div>
+              <span>{day.date.slice(5)}</span>
+            </div>
+          ))}
+        </div>
+        <span className="trend-unit">張</span>
       </div>
       {dashboard.sections.length > 0 ? (
         <SectionList sections={dashboard.sections} onOpen={onOpenSection} onReview={onReview} onAdd={onAdd} />
@@ -1127,7 +1148,7 @@ function SettingsView({
               onClick={() => onChange(preset.id)}
             >
               <strong>{preset.label}</strong>
-              <span>{Math.round(preset.retention * 100)}%</span>
+              <span className={`retention-value retention-${preset.id}`}>{Math.round(preset.retention * 100)}%</span>
               <small>{preset.description}</small>
             </button>
           ))}
