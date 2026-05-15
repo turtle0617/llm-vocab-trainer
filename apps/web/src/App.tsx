@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   BookOpen,
   CheckCircle2,
@@ -6,6 +6,7 @@ import {
   Layers,
   Library,
   LoaderCircle,
+  LogOut,
   Plus,
   RotateCcw,
   Send,
@@ -17,7 +18,9 @@ import {
 import type { DashboardResponse, GeneratedWord, SectionSummary, VocabCard } from "@vocab/shared";
 import { ReviewRating } from "@vocab/shared";
 import { api } from "./api";
-import { cacheCards, cacheSections, getCachedCards, queueReview } from "./offline";
+import { getAuthStatus, getCurrentUserUid, signIn, signOut, subscribeAuthState, type AuthStatus } from "./auth";
+import { cacheCards, cacheSections, getCachedCards, getPendingReviewCount, queueReview, removeCachedCard } from "./offline";
+import { syncPendingReviews } from "./sync";
 import {
   formatScheduledFeedback,
   getCardDueStatus,
@@ -32,10 +35,15 @@ type ToastState = { message: string; tone?: "success" | "warning" };
 type EmptyAction = { label: string; onClick: () => void; variant?: "primary" | "secondary" | "review" | "add" };
 
 export function App() {
+  const [authStatus, setAuthStatus] = useState<AuthStatus>("loading");
+  const [authError, setAuthError] = useState("");
+  const [bootstrapping, setBootstrapping] = useState(true);
+  const [pendingReviewCount, setPendingReviewCount] = useState(0);
   const [view, setView] = useState<View>("dashboard");
   const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
   const [sections, setSections] = useState<SectionSummary[]>([]);
   const [selectedSectionId, setSelectedSectionId] = useState<string>("");
+  const [syncVersion, setSyncVersion] = useState(0);
   const [error, setError] = useState<string>("");
   const [toast, setToast] = useState<ToastState | null>(null);
   const [reviewIntensity, setReviewIntensity] = useState<ReviewIntensityId>("standard");
@@ -97,9 +105,94 @@ export function App() {
   }
 
   useEffect(() => {
-    void loadDashboard();
-    void loadSettings();
+    let cancelled = false;
+
+    async function refreshPendingCount() {
+      setPendingReviewCount(await getPendingReviewCount(getCurrentUserUid()));
+    }
+
+    async function loadAuthenticatedApp() {
+      setBootstrapping(true);
+      const syncResult = await syncPendingReviews();
+      if (!cancelled && syncResult.status === "partial") {
+        notify("部分離線複習尚未同步，登入或連線後會繼續同步。", "warning");
+      }
+      if (!cancelled) {
+        await loadDashboard();
+        await loadSettings();
+        await refreshPendingCount();
+        if (syncResult.status === "complete") {
+          setSyncVersion((value) => value + 1);
+        }
+        setBootstrapping(false);
+      }
+    }
+
+    const unsubscribe = subscribeAuthState((nextStatus) => {
+      if (cancelled) return;
+      setAuthStatus(nextStatus);
+      setAuthError("");
+      void refreshPendingCount();
+      if (nextStatus === "authenticated") {
+        void loadAuthenticatedApp();
+      } else {
+        setBootstrapping(false);
+      }
+    });
+
+    function handleOnline() {
+      if (getAuthStatus() !== "authenticated") return;
+      void loadAuthenticatedApp();
+    }
+
+    function handleForegroundSync() {
+      if (document.visibilityState !== "visible") return;
+      if (getAuthStatus() !== "authenticated") return;
+      void loadAuthenticatedApp();
+    }
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("focus", handleOnline);
+    document.addEventListener("visibilitychange", handleForegroundSync);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("focus", handleOnline);
+      document.removeEventListener("visibilitychange", handleForegroundSync);
+    };
   }, []);
+
+  async function handleLogin(email: string, password: string) {
+    setAuthError("");
+    try {
+      await signIn(email, password);
+    } catch (err) {
+      setAuthError(formatAppError(err));
+    }
+  }
+
+  async function handleLogout() {
+    await signOut();
+    setDashboard(null);
+    setSections([]);
+    setSelectedSectionId("");
+  }
+
+  if (authStatus === "loading" || bootstrapping) {
+    return <LoadingState title="正在載入帳號與同步資料" />;
+  }
+
+  if (authStatus === "anonymous" || authStatus === "requiresLogin") {
+    return (
+      <LoginView
+        error={authError}
+        pendingReviewCount={pendingReviewCount}
+        requiresLogin={authStatus === "requiresLogin"}
+        onLogin={handleLogin}
+      />
+    );
+  }
 
   return (
     <div className="app-shell">
@@ -123,6 +216,9 @@ export function App() {
           </button>
           <button className={view === "settings" ? "active" : ""} onClick={() => setView("settings")}>
             <Settings size={18} /> 設定
+          </button>
+          <button onClick={handleLogout}>
+            <LogOut size={18} /> 登出
           </button>
         </nav>
       </aside>
@@ -178,6 +274,7 @@ export function App() {
             onAdd={() => openAdd(selectedSection?.id)}
             onDashboard={() => setView("dashboard")}
             notify={notify}
+            syncVersion={syncVersion}
           />
         )}
         {view === "settings" && (
@@ -185,6 +282,77 @@ export function App() {
         )}
       </main>
     </div>
+  );
+}
+
+function LoginView({
+  error,
+  pendingReviewCount,
+  requiresLogin,
+  onLogin
+}: {
+  error: string;
+  pendingReviewCount: number;
+  requiresLogin: boolean;
+  onLogin: (email: string, password: string) => Promise<void>;
+}) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!email.trim() || !password || submitting) return;
+    setSubmitting(true);
+    try {
+      await onLogin(email.trim(), password);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <main className="login-page">
+      <form className="login-panel" onSubmit={submit}>
+        <div className="brand login-brand">
+          <Library size={28} />
+          <span>vocab-pwa</span>
+        </div>
+        <div>
+          <p className="eyebrow">登入</p>
+          <h1>{requiresLogin ? "請重新登入" : "登入單字庫"}</h1>
+          {requiresLogin && <p className="page-subtitle">登入狀態已過期，重新登入後會繼續同步資料。</p>}
+        </div>
+        {pendingReviewCount > 0 && (
+          <InlineNotice
+            tone="info"
+            title={`有 ${pendingReviewCount} 筆離線複習待同步`}
+            description="登入後會先同步離線複習，再載入首頁進度。"
+          />
+        )}
+        {error && <InlineNotice tone="error" title="登入失敗" description={error} />}
+        <label htmlFor="login-email">Email</label>
+        <input
+          id="login-email"
+          autoComplete="email"
+          inputMode="email"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+        />
+        <label htmlFor="login-password">Password</label>
+        <input
+          id="login-password"
+          autoComplete="current-password"
+          type="password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+        />
+        <button className="primary-action" disabled={!email.trim() || !password || submitting}>
+          {submitting ? <LoaderCircle className="spin" size={18} /> : null}
+          登入
+        </button>
+      </form>
+    </main>
   );
 }
 
@@ -308,7 +476,7 @@ function Sections({
 
   async function deleteSelectedSection() {
     if (!selected) return;
-    const ok = window.confirm(`Delete deck "${selected.name}"? Cards in this deck will no longer appear.`);
+    const ok = window.confirm(`此牌組與其中 ${selected.totalCards} 張單字卡會被封存，之後不會出現在複習。`);
     if (!ok) return;
     await api.deleteSection(selected.id);
     setCards([]);
@@ -320,6 +488,7 @@ function Sections({
     if (!ok) return;
     await api.deleteCard(card.sectionId, card.id);
     setCards((current) => current.filter((item) => item.id !== card.id));
+    await removeCachedCard(card.id);
     await onDeleted();
   }
 
@@ -555,13 +724,15 @@ function Review({
   onDone,
   onAdd,
   onDashboard,
-  notify
+  notify,
+  syncVersion
 }: {
   section?: SectionSummary;
   onDone: () => void;
   onAdd: () => void;
   onDashboard: () => void;
   notify: (message: string, tone?: ToastState["tone"]) => void;
+  syncVersion: number;
 }) {
   const [queue, setQueue] = useState<VocabCard[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -597,6 +768,7 @@ function Review({
     setRating(nextRating);
     const reviewedAt = new Date();
     const review = {
+      clientReviewId: crypto.randomUUID(),
       cardId: current.id,
       sectionId: section.id,
       rating: nextRating,
@@ -606,8 +778,9 @@ function Review({
       const result = await api.review(review);
       notify(formatScheduledFeedback(result.nextDue, reviewedAt));
     } catch {
-      await queueReview(review);
-      notify("已離線暫存，連線後同步", "warning");
+      await queueReview(review, getCurrentUserUid());
+      await removeCachedCard(current.id);
+      notify("已離線暫存，登入或連線後同步", "warning");
     }
     setQueue((existing) => existing.slice(1));
     setFlipped(false);
@@ -623,7 +796,7 @@ function Review({
     setFlipped(false);
     setOffline(false);
     void load(true);
-  }, [section?.id]);
+  }, [section?.id, syncVersion]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {

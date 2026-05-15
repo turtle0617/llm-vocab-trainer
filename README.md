@@ -11,6 +11,8 @@
 - Paginated card loading to avoid fetching an entire deck at once.
 - Delete decks and delete individual cards.
 - PWA build with offline app shell and IndexedDB cache/queue scaffolding.
+- Email/password sign-in through Firebase Auth, with per-user Firestore data isolation.
+- Offline review queue that syncs after reconnecting or signing in again.
 - Switchable LLM providers: OpenRouter, Groq, and Gemini.
 
 ## Stack
@@ -56,7 +58,12 @@ LLM_MODEL=meta-llama/llama-4-maverick:free
 LLM_API_KEY=
 LLM_DEBUG_LOGS=false
 ALLOWED_ORIGINS=http://localhost:5173
+AUTH_DISABLED_FOR_DEV=false
 VITE_API_BASE_URL=http://127.0.0.1:5001/YOUR_PROJECT_ID/us-central1/api/api
+VITE_FIREBASE_API_KEY=
+VITE_FIREBASE_AUTH_DOMAIN=YOUR_PROJECT_ID.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=YOUR_PROJECT_ID
+VITE_USE_AUTH_EMULATOR=false
 ```
 
 For local development, create:
@@ -71,6 +78,10 @@ Example `apps/web/.env.local`:
 
 ```env
 VITE_API_BASE_URL=http://127.0.0.1:5001/YOUR_PROJECT_ID/us-central1/api/api
+VITE_FIREBASE_API_KEY=<your-web-api-key>
+VITE_FIREBASE_AUTH_DOMAIN=YOUR_PROJECT_ID.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=YOUR_PROJECT_ID
+VITE_USE_AUTH_EMULATOR=true
 ```
 
 Example `functions/.env.local`:
@@ -80,6 +91,7 @@ LLM_PROVIDER=groq
 LLM_MODEL=llama-3.3-70b-versatile
 LLM_DEBUG_LOGS=false
 ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+AUTH_DISABLED_FOR_DEV=false
 ```
 
 Example `functions/.secret.local`:
@@ -122,6 +134,12 @@ The Firebase Emulator UI is usually available at:
 http://127.0.0.1:4000/
 ```
 
+The Auth emulator runs on:
+
+```txt
+http://127.0.0.1:9099/
+```
+
 The local API URL shape is:
 
 ```txt
@@ -149,6 +167,10 @@ firebase use --add
 ```
 
 Enable Cloud Firestore in Firebase Console. Use production mode. This project does not let the browser access Firestore directly; all database writes go through Firebase Functions.
+
+Enable Firebase Authentication and the Email/Password provider. Any signed-in Firebase user can use the app; API reads and writes are scoped by that user's Firebase UID.
+
+For local development with the Auth emulator, create the same test user in the Emulator UI or by using Firebase tooling. You can set `AUTH_DISABLED_FOR_DEV=true` only while running the Functions emulator; production Functions reject this shortcut and require a valid Firebase ID token.
 
 Firebase emulators require Java 21 or newer. Check your current Java:
 
@@ -184,7 +206,23 @@ Collections:
 - `sections`: decks
 - `cards`: vocabulary cards
 - `reviewLogs`: review history
-- `settings`: reserved for app-level settings
+- `settings`: app-level settings
+
+New writes include `ownerUid` for per-user data isolation. Sections and cards use `archivedAt` for soft deletion, and review logs include `clientReviewId` so retried offline reviews are idempotent.
+
+If you already have production documents without `ownerUid`, run the owner backfill before deploying the owner-scoped API. The script defaults to dry-run:
+
+```sh
+BACKFILL_OWNER_UID=<firebase-auth-user-uid> npm run backfill:owner -w functions
+```
+
+After checking the printed counts, run the write:
+
+```sh
+BACKFILL_OWNER_UID=<firebase-auth-user-uid> BACKFILL_OWNER_DRY_RUN=false npm run backfill:owner -w functions
+```
+
+The backfill updates legacy `sections`, `cards`, and `reviewLogs` that do not have `ownerUid`, sets missing `archivedAt` to `null` on sections/cards, and copies `settings/global` to `settings/<uid>`.
 
 The browser is blocked from direct Firestore access by `firestore.rules`:
 
@@ -197,6 +235,8 @@ Firebase Functions uses the Admin SDK and is not blocked by these rules.
 ## API Overview
 
 - `GET /api/dashboard`
+- `GET /api/settings`
+- `PUT /api/settings`
 - `GET /api/sections`
 - `POST /api/sections`
 - `DELETE /api/sections/:sectionId`
@@ -205,6 +245,10 @@ Firebase Functions uses the Admin SDK and is not blocked by these rules.
 - `GET /api/cards?sectionId=<id>&dueBefore=<iso>&limit=<n>&cursor=<cursor>`
 - `DELETE /api/cards/:cardId?sectionId=<id>`
 - `POST /api/reviews`
+
+Live API requests require `Authorization: Bearer <Firebase ID token>`. Missing, invalid, or expired tokens return `401`. Valid Firebase users can use the API, and data is scoped by token UID.
+
+`POST /api/reviews` requires a client-generated `clientReviewId`. If the same review is retried after reconnecting, the backend returns the original `nextDue` without applying FSRS a second time.
 
 Review ratings mirror `ts-fsrs` numeric values:
 
@@ -265,6 +309,8 @@ Set the production LLM secret:
 firebase functions:secrets:set LLM_API_KEY
 ```
 
+No production allow-list UID is required. Access is controlled by Firebase Auth and per-user `ownerUid` scoping in Functions.
+
 Build and deploy:
 
 ```sh
@@ -281,6 +327,7 @@ npm run dev:web        # Vite frontend
 npm run dev:functions  # Firebase emulators
 npm run build          # Build all workspaces
 npm run test           # Run tests
+npm run test:integration -w functions  # Firestore emulator integration tests
 npm run deploy         # firebase deploy
 ```
 
@@ -289,4 +336,7 @@ npm run deploy         # firebase deploy
 - Never commit `.env.local`, `.secret.local`, Firebase debug logs, or service account files.
 - The frontend should not contain LLM API keys.
 - Firestore is intentionally accessed through Functions, not directly from the browser.
+- Live Functions require Firebase Auth ID tokens and scope Firestore data by token UID.
+- The frontend never stores the email/password. Firebase Auth manages the session and token refresh.
+- Offline pending reviews remain in IndexedDB when a token expires; after the next successful login, the app syncs them before refreshing the dashboard.
 - Keep `LLM_DEBUG_LOGS=false` in production.

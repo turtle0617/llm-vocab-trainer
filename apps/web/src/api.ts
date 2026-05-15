@@ -7,20 +7,28 @@ import type {
   GeneratedWord,
   PaginatedCardsResponse,
   AppSettings,
+  DeleteSectionResponse,
   SectionSummary
 } from "@vocab/shared";
 import { desiredRetentionByIntensity, ReviewRating, type UpdateSettingsRequest } from "@vocab/shared";
+import { getIdToken, markRequiresLogin } from "./auth";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 const USE_MOCK_API = import.meta.env.DEV && !API_BASE_URL;
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export class ApiAuthError extends Error {
+  readonly kind = "auth";
+}
+
+async function request<T>(path: string, init?: RequestInit, hasRetriedAuth = false): Promise<T> {
+  const token = USE_MOCK_API ? null : await getIdToken();
   const response = await fetch(`${API_BASE_URL ?? "/api"}${path}`, {
+    ...init,
     headers: {
       "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(init?.headers ?? {})
-    },
-    ...init
+    }
   });
 
   const contentType = response.headers.get("content-type") ?? "";
@@ -28,7 +36,34 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const error = isJson ? await response.json().catch(() => ({ message: response.statusText })) : null;
-    throw new Error(error.message ?? "Request failed");
+    if (response.status === 401 && !hasRetriedAuth && !USE_MOCK_API) {
+      try {
+        const refreshedToken = await getIdToken({ forceRefresh: true });
+        if (refreshedToken) {
+          return request<T>(
+            path,
+            {
+              ...init,
+              headers: {
+                ...(init?.headers ?? {}),
+                Authorization: `Bearer ${refreshedToken}`
+              }
+            },
+            true
+          );
+        }
+      } catch {
+        // Fall through to the auth error path below.
+      }
+      markRequiresLogin();
+      throw new ApiAuthError(error?.message ?? "登入已過期，請重新登入。");
+    }
+    if (response.status === 401) {
+      markRequiresLogin();
+      throw new ApiAuthError(error?.message ?? "登入已過期，請重新登入。");
+    }
+    if (response.status === 403) throw new Error(error?.message ?? "此帳號沒有權限。");
+    throw new Error(error?.message ?? "Request failed");
   }
 
   if (!isJson) {
@@ -53,7 +88,7 @@ const liveApi = {
   createSection: (body: CreateSectionRequest) =>
     request<SectionSummary>("/sections", { method: "POST", body: JSON.stringify(body) }),
   deleteSection: (sectionId: string) =>
-    request<{ id: string; archivedAt: string }>(`/sections/${sectionId}`, { method: "DELETE" }),
+    request<DeleteSectionResponse>(`/sections/${sectionId}`, { method: "DELETE" }),
   generateWord: (body: GenerateWordRequest) =>
     request<GeneratedWord>("/generate-word", { method: "POST", body: JSON.stringify(body) }),
   createCard: (body: CreateCardRequest) =>
@@ -226,11 +261,12 @@ function createMockApi(): typeof liveApi {
     },
     async deleteSection(sectionId) {
       const state = load();
+      const archivedCards = state.cards.filter((card) => card.sectionId === sectionId).length;
       state.sections = state.sections.filter((section) => section.id !== sectionId);
       state.cards = state.cards.filter((card) => card.sectionId !== sectionId);
       state.reviews = state.reviews.filter((review) => review.sectionId !== sectionId);
       save(state);
-      return { id: sectionId, archivedAt: new Date().toISOString() };
+      return { id: sectionId, archivedAt: new Date().toISOString(), archivedCards };
     },
     async generateWord(body) {
       const normalized = body.word.trim().toLowerCase();
@@ -321,6 +357,11 @@ function createMockApi(): typeof liveApi {
     },
     async review(body) {
       const state = load();
+      const existing = state.reviews.find((review) => review.clientReviewId === body.clientReviewId);
+      if (existing) {
+        const existingCard = state.cards.find((item) => item.id === body.cardId && item.sectionId === body.sectionId);
+        return { nextDue: existingCard?.due ?? body.reviewedAt };
+      }
       const card = state.cards.find((item) => item.id === body.cardId && item.sectionId === body.sectionId);
       if (!card) throw new Error("Card was not found.");
       const next = new Date(body.reviewedAt);
