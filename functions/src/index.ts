@@ -16,15 +16,19 @@ import {
   type GenerateWordRequest,
   type UpdateSettingsRequest
 } from "@vocab/shared";
+import { AuthError, authMiddleware, getAuthContext } from "./auth.js";
 import { createInitialFsrsState, scheduleReview } from "./srs.js";
 import {
+  assertCardReviewable,
   createCard,
   createSection,
   deleteCard,
   deleteSection,
+  getExistingReviewByClientId,
   getCardsPage,
   getDashboard,
   getSettings,
+  RepositoryError,
   getSectionSummaries,
   updateSettings,
   writeReview
@@ -53,9 +57,12 @@ app.use(
   })
 );
 
+app.use("/api", authMiddleware);
+
 app.get("/api/dashboard", async (_req, res, next) => {
   try {
-    res.json(await getDashboard(db));
+    const auth = getAuthContext(res);
+    res.json(await getDashboard(db, auth.uid));
   } catch (error) {
     next(error);
   }
@@ -63,7 +70,8 @@ app.get("/api/dashboard", async (_req, res, next) => {
 
 app.get("/api/sections", async (_req, res, next) => {
   try {
-    res.json(await getSectionSummaries(db));
+    const auth = getAuthContext(res);
+    res.json(await getSectionSummaries(db, auth.uid));
   } catch (error) {
     next(error);
   }
@@ -71,7 +79,8 @@ app.get("/api/sections", async (_req, res, next) => {
 
 app.get("/api/settings", async (_req, res, next) => {
   try {
-    res.json(await getSettings(db));
+    const auth = getAuthContext(res);
+    res.json(await getSettings(db, auth.uid));
   } catch (error) {
     next(error);
   }
@@ -79,6 +88,7 @@ app.get("/api/settings", async (_req, res, next) => {
 
 app.put("/api/settings", async (req, res, next) => {
   try {
+    const auth = getAuthContext(res);
     const body = z
       .object({
         reviewIntensity: reviewIntensitySchema
@@ -86,7 +96,7 @@ app.put("/api/settings", async (req, res, next) => {
       .strict()
       .parse(req.body) satisfies UpdateSettingsRequest;
 
-    res.json(await updateSettings(db, body.reviewIntensity));
+    res.json(await updateSettings(db, body.reviewIntensity, auth.uid));
   } catch (error) {
     next(error);
   }
@@ -94,6 +104,7 @@ app.put("/api/settings", async (req, res, next) => {
 
 app.post("/api/sections", async (req, res, next) => {
   try {
+    const auth = getAuthContext(res);
     const body = z
       .object({
         name: z.string().trim().min(1).max(80),
@@ -101,7 +112,7 @@ app.post("/api/sections", async (req, res, next) => {
       })
       .strict()
       .parse(req.body) satisfies CreateSectionRequest;
-    res.status(201).json(await createSection(db, body));
+    res.status(201).json(await createSection(db, body, auth.uid));
   } catch (error) {
     next(error);
   }
@@ -109,8 +120,9 @@ app.post("/api/sections", async (req, res, next) => {
 
 app.delete("/api/sections/:sectionId", async (req, res, next) => {
   try {
+    const auth = getAuthContext(res);
     const params = z.object({ sectionId: z.string().trim().min(1) }).parse(req.params);
-    res.json(await deleteSection(db, params.sectionId));
+    res.json(await deleteSection(db, params.sectionId, auth.uid));
   } catch (error) {
     next(error);
   }
@@ -141,6 +153,7 @@ app.post("/api/generate-word", async (req, res, next) => {
 
 app.post("/api/cards", async (req, res, next) => {
   try {
+    const auth = getAuthContext(res);
     const body = z
       .object({
         sectionId: z.string().trim().min(1),
@@ -150,7 +163,7 @@ app.post("/api/cards", async (req, res, next) => {
       .parse(req.body) satisfies CreateCardRequest;
 
     const fsrs = createInitialFsrsState();
-    res.status(201).json(await createCard(db, body, fsrs));
+    res.status(201).json(await createCard(db, body, fsrs, auth.uid));
   } catch (error) {
     next(error);
   }
@@ -158,9 +171,10 @@ app.post("/api/cards", async (req, res, next) => {
 
 app.delete("/api/cards/:cardId", async (req, res, next) => {
   try {
+    const auth = getAuthContext(res);
     const params = z.object({ cardId: z.string().trim().min(1) }).parse(req.params);
     const query = z.object({ sectionId: z.string().trim().min(1) }).parse(req.query);
-    res.json(await deleteCard(db, { cardId: params.cardId, sectionId: query.sectionId }));
+    res.json(await deleteCard(db, { cardId: params.cardId, sectionId: query.sectionId, ownerUid: auth.uid }));
   } catch (error) {
     next(error);
   }
@@ -168,6 +182,7 @@ app.delete("/api/cards/:cardId", async (req, res, next) => {
 
 app.get("/api/cards", async (req, res, next) => {
   try {
+    const auth = getAuthContext(res);
     const query = z
       .object({
         sectionId: z.string().trim().min(1),
@@ -178,7 +193,7 @@ app.get("/api/cards", async (req, res, next) => {
       .strict()
       .parse(req.query);
 
-    res.json(await getCardsPage(db, query));
+    res.json(await getCardsPage(db, query, auth.uid));
   } catch (error) {
     next(error);
   }
@@ -186,8 +201,10 @@ app.get("/api/cards", async (req, res, next) => {
 
 app.post("/api/reviews", async (req, res, next) => {
   try {
+    const auth = getAuthContext(res);
     const body = z
       .object({
+        clientReviewId: z.string().trim().min(1).max(120),
         cardId: z.string().trim().min(1),
         sectionId: z.string().trim().min(1),
         rating: reviewRatingSchema,
@@ -196,26 +213,24 @@ app.post("/api/reviews", async (req, res, next) => {
       .strict()
       .parse(req.body) satisfies CreateReviewRequest;
 
-    const settings = await getSettings(db);
+    const settings = await getSettings(db, auth.uid);
     const result = await db.runTransaction(async (transaction) => {
-      const cardRef = db.collection("cards").doc(body.cardId);
-      const snapshot = await transaction.get(cardRef);
-      if (!snapshot.exists) throw new HttpError(404, "Card was not found.");
+      const existing = await getExistingReviewByClientId(db, transaction, body.clientReviewId, auth.uid);
+      if (existing) return { due: existing.nextDue };
 
-      const card = snapshot.data()!;
-      if (card.sectionId !== body.sectionId) throw new HttpError(400, "Card does not belong to section.");
+      const card = await assertCardReviewable(db, transaction, body.cardId, body.sectionId, auth.uid);
       if (!isReviewRating(body.rating)) throw new HttpError(400, "Invalid review rating.");
 
-      const scheduled = scheduleReview(card.fsrs, body.rating, new Date(body.reviewedAt), {
+      const scheduled = scheduleReview(card.data.fsrs, body.rating, new Date(body.reviewedAt), {
         desiredRetention: settings.desiredRetention
       });
-      transaction.update(cardRef, {
+      transaction.update(card.ref, {
         fsrs: scheduled.fsrs,
         due: scheduled.due,
         state: scheduled.state,
         updatedAt: new Date().toISOString()
       });
-      await writeReview(db, transaction, body, scheduled);
+      await writeReview(db, transaction, body, scheduled, auth.uid);
       return scheduled;
     });
 
@@ -226,6 +241,10 @@ app.post("/api/reviews", async (req, res, next) => {
 });
 
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  if (error instanceof AuthError || error instanceof RepositoryError) {
+    res.status(error.status).json({ message: error.message });
+    return;
+  }
   if (error instanceof HttpError) {
     res.status(error.status).json({ message: error.message });
     return;

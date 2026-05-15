@@ -121,10 +121,17 @@ export interface CreateCardRequest {
 }
 
 export interface CreateReviewRequest {
+  clientReviewId: string;
   cardId: string;
   sectionId: string;
   rating: ReviewRating;
   reviewedAt: string;
+}
+
+export interface DeleteSectionResponse {
+  id: string;
+  archivedAt: string;
+  archivedCards: number;
 }
 
 export interface AppSettings {

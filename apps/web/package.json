@@ -12,12 +12,13 @@
   "dependencies": {
     "@vitejs/plugin-react": "^4.4.1",
     "@vocab/shared": "*",
+    "firebase": "^12.13.0",
     "idb": "^8.0.2",
     "lucide-react": "^0.511.0",
-    "vite": "^7.3.3",
-    "vite-plugin-pwa": "^1.0.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "vite": "^7.3.3",
+    "vite-plugin-pwa": "^1.0.0"
   },
   "devDependencies": {
     "@types/react": "^19.1.4",
