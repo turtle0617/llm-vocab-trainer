@@ -210,6 +210,20 @@ Collections:
 
 New writes include `ownerUid` for per-user data isolation. Sections and cards use `archivedAt` for soft deletion, and review logs include `clientReviewId` so retried offline reviews are idempotent.
 
+If you already have production documents without `ownerUid`, run the owner backfill before deploying the owner-scoped API. The script defaults to dry-run:
+
+```sh
+BACKFILL_OWNER_UID=<firebase-auth-user-uid> npm run backfill:owner -w functions
+```
+
+After checking the printed counts, run the write:
+
+```sh
+BACKFILL_OWNER_UID=<firebase-auth-user-uid> BACKFILL_OWNER_DRY_RUN=false npm run backfill:owner -w functions
+```
+
+The backfill updates legacy `sections`, `cards`, and `reviewLogs` that do not have `ownerUid`, and copies `settings/global` to `settings/<uid>`.
+
 The browser is blocked from direct Firestore access by `firestore.rules`:
 
 ```js
@@ -313,6 +327,7 @@ npm run dev:web        # Vite frontend
 npm run dev:functions  # Firebase emulators
 npm run build          # Build all workspaces
 npm run test           # Run tests
+npm run test:integration -w functions  # Firestore emulator integration tests
 npm run deploy         # firebase deploy
 ```
 

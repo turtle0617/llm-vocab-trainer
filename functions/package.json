@@ -6,8 +6,10 @@
   "main": "lib/index.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "backfill:owner": "npm run build && node lib/scripts/backfill-owner.js",
     "serve": "npm run build && firebase emulators:start --only functions,firestore,hosting,auth",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:integration": "vitest run src/*.integration.test.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
