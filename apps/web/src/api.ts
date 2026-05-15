@@ -2,6 +2,7 @@ import type {
   CreateCardRequest,
   CreateReviewRequest,
   CreateSectionRequest,
+  CreateSpeechRequest,
   DashboardResponse,
   GenerateWordRequest,
   GeneratedWord,
@@ -79,6 +80,60 @@ async function request<T>(path: string, init?: RequestInit, hasRetriedAuth = fal
   return response.json() as Promise<T>;
 }
 
+async function requestBlob(path: string, init?: RequestInit, hasRetriedAuth = false): Promise<Blob> {
+  const token = USE_MOCK_API ? null : await getIdToken();
+  const response = await fetch(`${API_BASE_URL ?? "/api"}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(init?.headers ?? {})
+    }
+  });
+
+  const contentType = response.headers.get("content-type") ?? "";
+  const isJson = contentType.includes("application/json");
+
+  if (!response.ok) {
+    const error = isJson ? await response.json().catch(() => ({ message: response.statusText })) : null;
+    if (response.status === 401 && !hasRetriedAuth && !USE_MOCK_API) {
+      try {
+        const refreshedToken = await getIdToken({ forceRefresh: true });
+        if (refreshedToken) {
+          return requestBlob(
+            path,
+            {
+              ...init,
+              headers: {
+                ...(init?.headers ?? {}),
+                Authorization: `Bearer ${refreshedToken}`
+              }
+            },
+            true
+          );
+        }
+      } catch {
+        // Fall through to the auth error path below.
+      }
+      markRequiresLogin();
+      throw new ApiAuthError(error?.message ?? "登入已過期，請重新登入。");
+    }
+    if (response.status === 401) {
+      markRequiresLogin();
+      throw new ApiAuthError(error?.message ?? "登入已過期，請重新登入。");
+    }
+    if (response.status === 403) throw new Error(error?.message ?? "此帳號沒有權限。");
+    throw new Error(error?.message ?? "Request failed");
+  }
+
+  if (isJson) {
+    const error = await response.json().catch(() => null);
+    throw new Error(error?.message ?? "API returned JSON instead of audio.");
+  }
+
+  return response.blob();
+}
+
 const liveApi = {
   dashboard: () => request<DashboardResponse>("/dashboard"),
   settings: () => request<AppSettings>("/settings"),
@@ -109,7 +164,9 @@ const liveApi = {
     return request<PaginatedCardsResponse>(`/cards?${query.toString()}`);
   },
   review: (body: CreateReviewRequest) =>
-    request<{ nextDue: string }>("/reviews", { method: "POST", body: JSON.stringify(body) })
+    request<{ nextDue: string }>("/reviews", { method: "POST", body: JSON.stringify(body) }),
+  speech: (body: CreateSpeechRequest) =>
+    requestBlob("/speech", { method: "POST", body: JSON.stringify(body) })
 };
 
 export const api = USE_MOCK_API ? createMockApi() : liveApi;
@@ -381,6 +438,9 @@ function createMockApi(): typeof liveApi {
       state.reviews.push(body);
       save(state);
       return { nextDue: card.due };
+    },
+    async speech() {
+      throw new Error("語音功能需要啟動 Firebase emulator 並設定 VITE_API_BASE_URL。");
     }
   };
 }
