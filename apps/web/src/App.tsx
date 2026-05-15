@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   BookOpen,
   CheckCircle2,
@@ -11,6 +11,7 @@ import {
   RotateCcw,
   Send,
   Settings,
+  Volume2,
   Sparkles,
   Trash2,
   WifiOff
@@ -33,6 +34,10 @@ import {
 type View = "dashboard" | "sections" | "add" | "review" | "settings";
 type ToastState = { message: string; tone?: "success" | "warning" };
 type EmptyAction = { label: string; onClick: () => void; variant?: "primary" | "secondary" | "review" | "add" };
+type SpeechController = {
+  playingText: string | null;
+  speak: (text: string) => Promise<void>;
+};
 
 export function App() {
   const [authStatus, setAuthStatus] = useState<AuthStatus>("loading");
@@ -48,6 +53,7 @@ export function App() {
   const [toast, setToast] = useState<ToastState | null>(null);
   const [reviewIntensity, setReviewIntensity] = useState<ReviewIntensityId>("standard");
   const [settingsSaving, setSettingsSaving] = useState(false);
+  const speech = useSpeechPlayer((message) => notify(message, "warning"));
 
   const selectedSection = useMemo(
     () => sections.find((section) => section.id === selectedSectionId) ?? getPrimarySection(sections),
@@ -255,6 +261,7 @@ export function App() {
               await loadDashboard();
               setSelectedSectionId("");
             }}
+            speech={speech}
           />
         )}
         {view === "add" && (
@@ -265,6 +272,7 @@ export function App() {
             onAdded={loadDashboard}
             onReview={openReview}
             onCreateSection={() => setView("sections")}
+            speech={speech}
           />
         )}
         {view === "review" && (
@@ -275,6 +283,7 @@ export function App() {
             onDashboard={() => setView("dashboard")}
             notify={notify}
             syncVersion={syncVersion}
+            speech={speech}
           />
         )}
         {view === "settings" && (
@@ -283,6 +292,83 @@ export function App() {
       </main>
     </div>
   );
+}
+
+function useSpeechPlayer(onError: (message: string) => void): SpeechController {
+  const [playingText, setPlayingText] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const urlRef = useRef<string | null>(null);
+  const requestIdRef = useRef(0);
+
+  function stopCurrent() {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = "";
+      audioRef.current = null;
+    }
+    if (urlRef.current) {
+      URL.revokeObjectURL(urlRef.current);
+      urlRef.current = null;
+    }
+    setPlayingText(null);
+  }
+
+  useEffect(() => {
+    window.addEventListener("beforeunload", stopCurrent);
+    return () => {
+      window.removeEventListener("beforeunload", stopCurrent);
+      stopCurrent();
+    };
+  }, []);
+
+  async function speak(text: string) {
+    const normalized = text.trim();
+    if (!normalized || playingText === normalized) return;
+    if (normalized.length > 200) {
+      onError("Groq Orpheus 單次最多支援 200 個字元。");
+      return;
+    }
+
+    let audio: HTMLAudioElement | null = null;
+    let url: string | null = null;
+    const requestId = requestIdRef.current + 1;
+    try {
+      requestIdRef.current = requestId;
+      stopCurrent();
+      setPlayingText(normalized);
+      const blob = await api.speech({ text: normalized, voice: "hannah" });
+      if (requestId !== requestIdRef.current) return;
+      url = URL.createObjectURL(blob);
+      audio = new Audio(url);
+      audioRef.current = audio;
+      urlRef.current = url;
+      audio.addEventListener("ended", () => {
+        setPlayingText(null);
+        if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+        urlRef.current = null;
+        audioRef.current = null;
+      });
+      audio.addEventListener("error", () => {
+        setPlayingText(null);
+        if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+        urlRef.current = null;
+        audioRef.current = null;
+        onError("語音播放失敗，請稍後再試。");
+      });
+      await audio.play();
+    } catch (err) {
+      if (url && urlRef.current === url) {
+        URL.revokeObjectURL(url);
+        urlRef.current = null;
+      }
+      if (audioRef.current === audio) audioRef.current = null;
+      if (requestId !== requestIdRef.current) return;
+      setPlayingText(null);
+      onError(formatAppError(err));
+    }
+  }
+
+  return { playingText, speak };
 }
 
 function LoginView({
@@ -436,7 +522,8 @@ function Sections({
   onSelect,
   onAdd,
   onReview,
-  onDeleted
+  onDeleted,
+  speech
 }: {
   sections: SectionSummary[];
   selectedSectionId: string;
@@ -445,6 +532,7 @@ function Sections({
   onAdd: () => void;
   onReview: () => void;
   onDeleted: () => void;
+  speech: SpeechController;
 }) {
   const [name, setName] = useState("");
   const [cards, setCards] = useState<VocabCard[]>([]);
@@ -573,7 +661,10 @@ function Sections({
                 <div className="cards-list">
                   {cards.map((card) => (
                     <article key={card.id} className="word-row">
-                      <strong>{card.word}</strong>
+                      <div className="word-with-audio">
+                        <strong>{card.word}</strong>
+                        <SpeechButton text={card.word} speech={speech} label={`播放 ${card.word}`} />
+                      </div>
                       <span>{card.content.entries[0]?.zhDefinition}</span>
                       <time>{formatDueDate(card.due)}</time>
                       <span className={`status-pill ${getCardDueStatus(card).toLowerCase()}`}>{getCardDueStatus(card)}</span>
@@ -611,7 +702,8 @@ function AddWord({
   onSectionChange,
   onAdded,
   onReview,
-  onCreateSection
+  onCreateSection,
+  speech
 }: {
   sections: SectionSummary[];
   selectedSectionId: string;
@@ -619,6 +711,7 @@ function AddWord({
   onAdded: () => void;
   onReview: (id?: string) => void;
   onCreateSection: () => void;
+  speech: SpeechController;
 }) {
   const [word, setWord] = useState("");
   const [generated, setGenerated] = useState<GeneratedWord | null>(null);
@@ -713,7 +806,7 @@ function AddWord({
         )}
       </div>
       {generated && (
-        <GeneratedWordCard generated={generated} onAdd={addCard} />
+        <GeneratedWordCard generated={generated} onAdd={addCard} speech={speech} />
       )}
     </section>
   );
@@ -725,7 +818,8 @@ function Review({
   onAdd,
   onDashboard,
   notify,
-  syncVersion
+  syncVersion,
+  speech
 }: {
   section?: SectionSummary;
   onDone: () => void;
@@ -733,6 +827,7 @@ function Review({
   onDashboard: () => void;
   notify: (message: string, tone?: ToastState["tone"]) => void;
   syncVersion: number;
+  speech: SpeechController;
 }) {
   const [queue, setQueue] = useState<VocabCard[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -859,7 +954,7 @@ function Review({
         </button>
       ) : (
         <div className="review-card flipped">
-          <ReviewAnswer card={current} />
+          <ReviewAnswer card={current} speech={speech} />
         </div>
       )}
       {flipped && (
@@ -919,13 +1014,16 @@ function SectionList({
   );
 }
 
-function GeneratedWordCard({ generated, onAdd }: { generated: GeneratedWord; onAdd: () => void }) {
+function GeneratedWordCard({ generated, onAdd, speech }: { generated: GeneratedWord; onAdd: () => void; speech: SpeechController }) {
   return (
     <article className="generated-card">
       <div className="detail-header">
         <div>
           <p className="eyebrow">Generated</p>
-          <h2>{generated.word}</h2>
+          <div className="heading-with-audio">
+            <h2>{generated.word}</h2>
+            <SpeechButton text={generated.word} speech={speech} label={`播放 ${generated.word}`} />
+          </div>
         </div>
         <button onClick={onAdd}><Send size={17} /> Add</button>
       </div>
@@ -935,7 +1033,10 @@ function GeneratedWordCard({ generated, onAdd }: { generated: GeneratedWord; onA
           <p><strong>{entry.zhDefinition}</strong> · {entry.enDefinition}</p>
           {entry.examples.map((example) => (
             <blockquote key={example.en}>
-              {example.en}
+              <span className="example-line">
+                <span>{example.en}</span>
+                <SpeechButton text={example.en} speech={speech} label="播放例句" />
+              </span>
               <small>{example.zh}</small>
             </blockquote>
           ))}
@@ -945,29 +1046,54 @@ function GeneratedWordCard({ generated, onAdd }: { generated: GeneratedWord; onA
   );
 }
 
-function ReviewAnswer({ card }: { card: VocabCard }) {
+function ReviewAnswer({ card, speech }: { card: VocabCard; speech: SpeechController }) {
   return (
     <div className="answer">
-      <h2>{card.word}</h2>
+      <div className="heading-with-audio">
+        <h2>{card.word}</h2>
+        <SpeechButton text={card.word} speech={speech} label={`播放 ${card.word}`} />
+      </div>
       {card.content.entries.map((entry, index) => (
-        <ReviewEntry key={`${entry.partOfSpeech}-${entry.zhDefinition}`} entry={entry} isFirst={index === 0} />
+        <ReviewEntry key={`${entry.partOfSpeech}-${entry.zhDefinition}`} entry={entry} isFirst={index === 0} speech={speech} />
       ))}
     </div>
   );
 }
 
-function ReviewEntry({ entry, isFirst }: { entry: GeneratedWord["entries"][number]; isFirst: boolean }) {
+function ReviewEntry({ entry, isFirst, speech }: { entry: GeneratedWord["entries"][number]; isFirst: boolean; speech: SpeechController }) {
   return (
     <div className={`entry ${isFirst ? "compact-entry" : ""}`}>
       <span className="tag">{entry.partOfSpeech}</span>
       <p><strong>{entry.zhDefinition}</strong> · {entry.enDefinition}</p>
       {entry.examples.map((example) => (
         <blockquote key={example.en}>
-          {example.en}
+          <span className="example-line">
+            <span>{example.en}</span>
+            <SpeechButton text={example.en} speech={speech} label="播放例句" />
+          </span>
           <small>{example.zh}</small>
         </blockquote>
       ))}
     </div>
+  );
+}
+
+function SpeechButton({ text, speech, label }: { text: string; speech: SpeechController; label: string }) {
+  const normalized = text.trim();
+  const isPlaying = speech.playingText === normalized;
+  return (
+    <button
+      className="speech-button"
+      disabled={!normalized || isPlaying}
+      title={label}
+      aria-label={label}
+      onClick={(event) => {
+        event.stopPropagation();
+        void speech.speak(normalized);
+      }}
+    >
+      {isPlaying ? <LoaderCircle className="spin" size={16} /> : <Volume2 size={16} />}
+    </button>
   );
 }
 

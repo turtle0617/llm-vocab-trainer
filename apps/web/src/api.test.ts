@@ -91,6 +91,27 @@ describe("live API client auth", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(authMock.getIdToken).toHaveBeenCalledTimes(1);
   });
+
+  it("returns a speech audio blob from live requests", async () => {
+    const audio = new Blob(["wav"], { type: "audio/wav" });
+    authMock.getIdToken.mockResolvedValue("token-a");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(blobResponse(200, audio)));
+
+    const { api } = await import("./api");
+    await expect(api.speech({ text: "hello", voice: "hannah" })).resolves.toBe(audio);
+
+    expect(fetch).toHaveBeenCalledWith(
+      "https://api.example.test/api/speech",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          Authorization: "Bearer token-a",
+          "Content-Type": "application/json"
+        }),
+        body: JSON.stringify({ text: "hello", voice: "hannah" })
+      })
+    );
+  });
 });
 
 function jsonResponse(status: number, body: unknown) {
@@ -100,5 +121,15 @@ function jsonResponse(status: number, body: unknown) {
     statusText: String(status),
     headers: new Headers({ "content-type": "application/json" }),
     json: async () => body
+  };
+}
+
+function blobResponse(status: number, body: Blob) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    statusText: String(status),
+    headers: new Headers({ "content-type": body.type }),
+    blob: async () => body
   };
 }

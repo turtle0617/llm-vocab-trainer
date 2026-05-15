@@ -253,6 +253,16 @@ label {
   color: var(--color-primary-text);
 }
 
+.speech-button {
+  background: var(--color-primary-soft);
+  border-color: var(--color-primary-border);
+  color: var(--color-primary-text);
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 0;
+  width: 32px;
+}
+
 .stats-grid {
   display: grid;
   gap: 14px;
@@ -495,6 +505,34 @@ label {
   gap: 14px;
   grid-template-columns: 150px minmax(0, 1fr) 88px 76px 42px;
   padding: 12px 0;
+}
+
+.word-with-audio,
+.heading-with-audio,
+.example-line {
+  align-items: center;
+  display: inline-flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.word-with-audio {
+  justify-content: start;
+}
+
+.word-with-audio strong,
+.example-line span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.heading-with-audio h2 {
+  margin: 0;
+}
+
+.example-line {
+  max-width: 100%;
 }
 
 .icon-danger {

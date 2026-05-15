@@ -6,6 +6,7 @@ import { onRequest } from "firebase-functions/v2/https";
 import { z } from "zod";
 import {
   ReviewRating,
+  createSpeechRequestSchema,
   generatedWordSchema,
   normalizeWordInput,
   reviewIntensitySchema,
@@ -13,6 +14,7 @@ import {
   type CreateCardRequest,
   type CreateReviewRequest,
   type CreateSectionRequest,
+  type CreateSpeechRequest,
   type GenerateWordRequest,
   type UpdateSettingsRequest
 } from "@vocab/shared";
@@ -34,6 +36,7 @@ import {
   writeReview
 } from "./repositories.js";
 import { generateWordWithProvider } from "./llm/providers.js";
+import { generateSpeech, SpeechConfigError, SpeechProviderError } from "./speech.js";
 
 initializeApp();
 
@@ -151,6 +154,23 @@ app.post("/api/generate-word", async (req, res, next) => {
   }
 });
 
+app.post("/api/speech", async (req, res, next) => {
+  try {
+    const body = createSpeechRequestSchema.parse(req.body) satisfies CreateSpeechRequest;
+    const audio = await generateSpeech(body);
+    res
+      .status(200)
+      .set({
+        "Cache-Control": "no-store",
+        "Content-Length": String(audio.byteLength),
+        "Content-Type": "audio/wav"
+      })
+      .send(Buffer.from(audio));
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/cards", async (req, res, next) => {
   try {
     const auth = getAuthContext(res);
@@ -257,6 +277,17 @@ app.use((error: unknown, _req: express.Request, res: express.Response, _next: ex
     res.status(422).json({ message: error.message });
     return;
   }
+  if (error instanceof SpeechProviderError) {
+    res.status(502).json({
+      code: error.providerCode,
+      message: error.message
+    });
+    return;
+  }
+  if (error instanceof SpeechConfigError) {
+    res.status(500).json({ message: error.message });
+    return;
+  }
   console.error(error);
   res.status(500).json({ message: "Internal server error." });
 });
@@ -264,7 +295,7 @@ app.use((error: unknown, _req: express.Request, res: express.Response, _next: ex
 export const api = onRequest(
   {
     region: "us-central1",
-    secrets: ["LLM_API_KEY"]
+    secrets: ["LLM_API_KEY", "GROQ_API_KEY"]
   },
   app
 );
