@@ -1,7 +1,12 @@
 import { openDB, type DBSchema } from "idb";
 import type { CreateReviewRequest, SectionSummary, VocabCard } from "@vocab/shared";
 
-type QueuedReview = CreateReviewRequest & { queuedAt: string; ownerUid?: string };
+export type QueuedReview = CreateReviewRequest & { queuedAt: string; ownerUid?: string };
+type StoredQueuedReview = Omit<CreateReviewRequest, "clientReviewId"> &
+  Partial<Pick<CreateReviewRequest, "clientReviewId">> & {
+    queuedAt?: string;
+    ownerUid?: string;
+  };
 
 interface VocabDb extends DBSchema {
   sections: {
@@ -15,11 +20,11 @@ interface VocabDb extends DBSchema {
   };
   pendingReviews: {
     key: string;
-    value: QueuedReview;
+    value: StoredQueuedReview;
   };
   pendingReviewQueue: {
     key: string;
-    value: QueuedReview;
+    value: StoredQueuedReview;
   };
 }
 
@@ -103,7 +108,7 @@ export async function removePendingReview(clientReviewId: string) {
   }
 }
 
-function normalizeQueuedReview(review: QueuedReview): QueuedReview {
+function normalizeQueuedReview(review: StoredQueuedReview): QueuedReview {
   return {
     ...review,
     clientReviewId: review.clientReviewId || `legacy-${review.cardId}-${review.reviewedAt}`,

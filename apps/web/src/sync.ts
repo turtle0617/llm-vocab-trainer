@@ -17,9 +17,10 @@ export async function syncPendingReviews(): Promise<SyncResult> {
 
   for (const review of pending) {
     try {
-      const { queuedAt: _queuedAt, ownerUid: _ownerUid, ...request } = review;
+      const { queuedAt: _queuedAt, ownerUid: _ownerUid, clientReviewId, ...reviewRequest } = review;
+      const request = { clientReviewId, ...reviewRequest };
       await api.review(request);
-      await removePendingReview(review.clientReviewId);
+      await removePendingReview(clientReviewId);
       synced += 1;
     } catch (error) {
       if (error instanceof ApiAuthError) return { status: "partial", synced, error };
