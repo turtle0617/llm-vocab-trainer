@@ -25,6 +25,12 @@
 - `ts-fsrs` for spaced repetition scheduling
 - Zod validation for API and LLM output contracts
 
+## Usage Limits and Billing
+
+Firebase Hosting can serve the frontend on the Spark plan, but production Firebase Functions require the Blaze plan. Blaze is pay-as-you-go with no-cost usage quotas for several services; budget alerts notify you about spend but do not cap usage automatically.
+
+See [Firebase and LLM Usage Limits](docs/usage-limits.md) for the project-specific cost map, rough review/card-generation usage math, and budget alert setup.
+
 ## FSRS Configuration
 
 The backend uses a centralized FSRS configuration in `functions/src/fsrs-config.ts`.
@@ -303,10 +309,30 @@ Browser -> Firebase Hosting -> /api/** rewrite -> Firebase Functions -> Cloud Fi
 
 ## Deploy
 
-Set the production LLM secret:
+For local emulator development, secrets can live in `functions/.secret.local`.
+
+For production, prefer Firebase Secret Manager on Blaze:
 
 ```sh
 firebase functions:secrets:set LLM_API_KEY
+```
+
+If you are intentionally not using Secret Manager, set the production Functions env file instead. The filename must match the selected Firebase project alias or project ID, for example:
+
+```txt
+functions/.env.dev
+functions/.env.YOUR_PROJECT_ID
+```
+
+Required production values include:
+
+```env
+LLM_PROVIDER=groq
+LLM_MODEL=llama-3.3-70b-versatile
+LLM_API_KEY=<your-provider-api-key>
+GROQ_API_KEY=<your-groq-api-key-for-speech>
+ALLOWED_ORIGINS=https://YOUR_PROJECT_ID.web.app,https://YOUR_PROJECT_ID.firebaseapp.com
+AUTH_DISABLED_FOR_DEV=false
 ```
 
 No production allow-list UID is required. Access is controlled by Firebase Auth and per-user `ownerUid` scoping in Functions.

@@ -294,8 +294,7 @@ app.use((error: unknown, _req: express.Request, res: express.Response, _next: ex
 
 export const api = onRequest(
   {
-    region: "us-central1",
-    secrets: ["LLM_API_KEY", "GROQ_API_KEY"]
+    region: "us-central1"
   },
   app
 );
