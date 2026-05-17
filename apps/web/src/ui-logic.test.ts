@@ -4,6 +4,7 @@ import {
   formatScheduledFeedback,
   getCardDueStatus,
   getDashboardAction,
+  getTrendScale,
   reviewIntensityPresets
 } from "./ui-logic";
 
@@ -30,6 +31,12 @@ describe("ui logic", () => {
 
   it("exposes understandable review intensity presets", () => {
     expect(reviewIntensityPresets.map((preset) => preset.retention)).toEqual([0.85, 0.9, 0.93, 0.95]);
+  });
+
+  it("rounds trend axis to readable scale steps", () => {
+    expect(getTrendScale([0, 0, 0])).toEqual({ max: 2, middle: 1 });
+    expect(getTrendScale([2, 3, 5])).toEqual({ max: 10, middle: 5 });
+    expect(getTrendScale([98, 101, 203])).toEqual({ max: 400, middle: 200 });
   });
 
   it("formats due status and scheduled feedback", () => {

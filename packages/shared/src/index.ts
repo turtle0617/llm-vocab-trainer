@@ -60,6 +60,19 @@ export const generatedWordSchema = z
 
 export type GeneratedWord = z.infer<typeof generatedWordSchema>;
 
+export const speechVoiceSchema = z.enum(["autumn", "diana", "hannah", "austin", "daniel", "troy"]);
+
+export type SpeechVoice = z.infer<typeof speechVoiceSchema>;
+
+export const createSpeechRequestSchema = z
+  .object({
+    text: z.string().trim().min(1).max(200),
+    voice: speechVoiceSchema.default("hannah")
+  })
+  .strict();
+
+export type CreateSpeechRequest = z.infer<typeof createSpeechRequestSchema>;
+
 export type WordContent = GeneratedWord;
 
 export interface SectionSummary {

@@ -7,7 +7,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "backfill:owner": "npm run build && node lib/scripts/backfill-owner.js",
-    "serve": "npm run build && firebase emulators:start --only functions,firestore,hosting,auth",
+    "serve": "npm run serve:persist",
+    "serve:persist": "mkdir -p ../.firebase-emulator-data && npm run build && firebase emulators:start --only functions,firestore,hosting,auth --import ../.firebase-emulator-data --export-on-exit ../.firebase-emulator-data",
+    "serve:fresh": "npm run build && firebase emulators:start --only functions,firestore,hosting,auth",
     "test": "vitest run",
     "test:integration": "vitest run src/*.integration.test.ts"
   },

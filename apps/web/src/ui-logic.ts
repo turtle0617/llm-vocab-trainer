@@ -74,6 +74,19 @@ export function getPrimarySection(sections: SectionSummary[]) {
   return sections.find((section) => section.dueToday > 0) ?? sections[0];
 }
 
+export function getTrendScale(values: number[]) {
+  const maxValue = Math.max(1, ...values);
+  const magnitude = 10 ** Math.floor(Math.log10(maxValue));
+  const normalized = maxValue / magnitude;
+  const niceNormalized = normalized <= 2 ? 2 : normalized <= 4 ? 4 : 10;
+  const max = niceNormalized * magnitude;
+
+  return {
+    max,
+    middle: max / 2
+  };
+}
+
 export function formatScheduledFeedback(nextDue: string, reviewedAt = new Date()) {
   const due = new Date(nextDue);
   const diffMs = due.getTime() - reviewedAt.getTime();

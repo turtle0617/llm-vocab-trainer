@@ -3,6 +3,7 @@ dist
 lib
 .DS_Store
 .firebase
+.firebase-emulator-data
 .firebase-config
 .firebaserc
 .env
