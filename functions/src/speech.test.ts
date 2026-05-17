@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createSpeechRequestSchema } from "@vocab/shared";
 import { generateSpeech, SpeechConfigError, SpeechProviderError } from "./speech.js";
 
 describe("generateSpeech", () => {
@@ -50,7 +51,7 @@ describe("generateSpeech", () => {
       })
     );
 
-    await generateSpeech({ text: "hello", voice: undefined as never });
+    await generateSpeech(createSpeechRequestSchema.parse({ text: "hello" }));
 
     expect(fetch).toHaveBeenCalledWith(
       expect.any(String),
