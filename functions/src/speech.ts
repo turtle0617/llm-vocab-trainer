@@ -1,4 +1,4 @@
-import { createSpeechRequestSchema, type CreateSpeechRequest } from "@vocab/shared";
+import type { CreateSpeechRequest } from "@vocab/shared";
 
 const GROQ_SPEECH_ENDPOINT = "https://api.groq.com/openai/v1/audio/speech";
 const GROQ_SPEECH_MODEL = "canopylabs/orpheus-v1-english";
@@ -16,7 +16,6 @@ export class SpeechProviderError extends Error {
 export class SpeechConfigError extends Error {}
 
 export async function generateSpeech(input: CreateSpeechRequest): Promise<ArrayBuffer> {
-  const body = createSpeechRequestSchema.parse(input);
   const response = await fetch(GROQ_SPEECH_ENDPOINT, {
     method: "POST",
     headers: {
@@ -25,8 +24,8 @@ export async function generateSpeech(input: CreateSpeechRequest): Promise<ArrayB
     },
     body: JSON.stringify({
       model: GROQ_SPEECH_MODEL,
-      input: body.text,
-      voice: body.voice,
+      input: input.text,
+      voice: input.voice,
       response_format: "wav"
     })
   });

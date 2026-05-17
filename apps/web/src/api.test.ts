@@ -94,21 +94,60 @@ describe("live API client auth", () => {
 
   it("returns a speech audio blob from live requests", async () => {
     const audio = new Blob(["wav"], { type: "audio/wav" });
+    const controller = new AbortController();
     authMock.getIdToken.mockResolvedValue("token-a");
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(blobResponse(200, audio)));
 
     const { api } = await import("./api");
-    await expect(api.speech({ text: "hello", voice: "hannah" })).resolves.toBe(audio);
+    await expect(api.speech({ text: "hello", voice: "hannah" }, { signal: controller.signal })).resolves.toBe(audio);
 
     expect(fetch).toHaveBeenCalledWith(
       "https://api.example.test/api/speech",
       expect.objectContaining({
         method: "POST",
+        signal: controller.signal,
         headers: expect.objectContaining({
           Authorization: "Bearer token-a",
           "Content-Type": "application/json"
         }),
         body: JSON.stringify({ text: "hello", voice: "hannah" })
+      })
+    );
+  });
+
+  it("passes abort signals to generated word requests", async () => {
+    const controller = new AbortController();
+    authMock.getIdToken.mockResolvedValue("token-a");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse(200, {
+          word: "test",
+          normalizedWord: "test",
+          entries: [
+            {
+              partOfSpeech: "noun",
+              zhDefinition: "測試",
+              enDefinition: "an examination",
+              examples: [{ en: "I have a test tomorrow.", zh: "我明天有考試。" }]
+            }
+          ]
+        })
+      )
+    );
+
+    const { api } = await import("./api");
+    await api.generateWord({ word: "test", sectionId: "section-1", locale: "zh-TW" }, { signal: controller.signal });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "https://api.example.test/api/generate-word",
+      expect.objectContaining({
+        method: "POST",
+        signal: controller.signal,
+        headers: expect.objectContaining({
+          Authorization: "Bearer token-a",
+          "Content-Type": "application/json"
+        })
       })
     );
   });

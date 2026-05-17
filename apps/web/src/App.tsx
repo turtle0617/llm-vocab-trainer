@@ -300,8 +300,13 @@ function useSpeechPlayer(onError: (message: string) => void): SpeechController {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const urlRef = useRef<string | null>(null);
   const requestIdRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
 
   function stopCurrent() {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.src = "";
@@ -333,12 +338,15 @@ function useSpeechPlayer(onError: (message: string) => void): SpeechController {
     let audio: HTMLAudioElement | null = null;
     let url: string | null = null;
     const requestId = requestIdRef.current + 1;
+    const abortController = new AbortController();
     try {
       requestIdRef.current = requestId;
       stopCurrent();
+      abortRef.current = abortController;
       setPlayingText(normalized);
-      const blob = await api.speech({ text: normalized, voice: "hannah" });
+      const blob = await api.speech({ text: normalized, voice: "hannah" }, { signal: abortController.signal });
       if (requestId !== requestIdRef.current) return;
+      abortRef.current = null;
       url = URL.createObjectURL(blob);
       audio = new Audio(url);
       audioRef.current = audio;
@@ -358,6 +366,7 @@ function useSpeechPlayer(onError: (message: string) => void): SpeechController {
       });
       await audio.play();
     } catch (err) {
+      if (abortRef.current === abortController) abortRef.current = null;
       if (url && urlRef.current === url) {
         URL.revokeObjectURL(url);
         urlRef.current = null;
@@ -365,11 +374,16 @@ function useSpeechPlayer(onError: (message: string) => void): SpeechController {
       if (audioRef.current === audio) audioRef.current = null;
       if (requestId !== requestIdRef.current) return;
       setPlayingText(null);
+      if (isAbortError(err)) return;
       onError(formatAppError(err));
     }
   }
 
   return { playingText, speak };
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === "AbortError";
 }
 
 function LoginView({

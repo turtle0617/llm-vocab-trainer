@@ -16,140 +16,122 @@ import { getIdToken, markRequiresLogin } from "./auth";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 const USE_MOCK_API = import.meta.env.DEV && !API_BASE_URL;
+type ApiRequestOptions = { signal?: AbortSignal };
+type AuthAdapter = {
+  getIdToken: typeof getIdToken;
+  markRequiresLogin: typeof markRequiresLogin;
+  useMockApi: boolean;
+};
 
 export class ApiAuthError extends Error {
   readonly kind = "auth";
 }
 
-async function request<T>(path: string, init?: RequestInit, hasRetriedAuth = false): Promise<T> {
-  const token = USE_MOCK_API ? null : await getIdToken();
-  const response = await fetch(`${API_BASE_URL ?? "/api"}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(init?.headers ?? {})
+class ApiFetch {
+  constructor(
+    private readonly baseUrl: string,
+    private readonly auth: AuthAdapter
+  ) {}
+
+  async json<T>(path: string, init?: RequestInit, options?: ApiRequestOptions): Promise<T> {
+    const response = await this.send(path, init, options);
+    const contentType = response.headers.get("content-type") ?? "";
+    const isJson = contentType.includes("application/json");
+
+    if (!isJson) {
+      const text = await response.text();
+      if (text.trim().startsWith("<!doctype") || text.trim().startsWith("<html")) {
+        throw new Error(
+          "API returned HTML instead of JSON. Start Firebase emulators, set VITE_API_BASE_URL, or use the built-in dev mock API."
+        );
+      }
+      throw new Error("API returned a non-JSON response.");
     }
-  });
 
-  const contentType = response.headers.get("content-type") ?? "";
-  const isJson = contentType.includes("application/json");
+    return response.json() as Promise<T>;
+  }
 
-  if (!response.ok) {
-    const error = isJson ? await response.json().catch(() => ({ message: response.statusText })) : null;
-    if (response.status === 401 && !hasRetriedAuth && !USE_MOCK_API) {
+  async blob(path: string, init?: RequestInit, options?: ApiRequestOptions): Promise<Blob> {
+    const response = await this.send(path, init, options);
+    const contentType = response.headers.get("content-type") ?? "";
+    const isJson = contentType.includes("application/json");
+
+    if (isJson) {
+      const error = await response.json().catch(() => null);
+      throw new Error(error?.message ?? "API returned JSON instead of audio.");
+    }
+
+    return response.blob();
+  }
+
+  private async send(
+    path: string,
+    init?: RequestInit,
+    options?: ApiRequestOptions,
+    hasRetriedAuth = false,
+    tokenOverride?: string
+  ): Promise<Response> {
+    const token = this.auth.useMockApi ? null : (tokenOverride ?? await this.auth.getIdToken());
+    const response = await fetch(`${this.baseUrl}${path}`, {
+      ...init,
+      signal: options?.signal,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(init?.headers ?? {})
+      }
+    });
+
+    if (response.ok) return response;
+
+    const error = await parseApiError(response);
+    if (response.status === 401 && !hasRetriedAuth && !this.auth.useMockApi) {
       try {
-        const refreshedToken = await getIdToken({ forceRefresh: true });
-        if (refreshedToken) {
-          return request<T>(
-            path,
-            {
-              ...init,
-              headers: {
-                ...(init?.headers ?? {}),
-                Authorization: `Bearer ${refreshedToken}`
-              }
-            },
-            true
-          );
-        }
+        const refreshedToken = await this.auth.getIdToken({ forceRefresh: true });
+        if (refreshedToken) return this.send(path, init, options, true, refreshedToken);
       } catch {
         // Fall through to the auth error path below.
       }
-      markRequiresLogin();
+      this.auth.markRequiresLogin();
       throw new ApiAuthError(error?.message ?? "登入已過期，請重新登入。");
     }
     if (response.status === 401) {
-      markRequiresLogin();
+      this.auth.markRequiresLogin();
       throw new ApiAuthError(error?.message ?? "登入已過期，請重新登入。");
     }
     if (response.status === 403) throw new Error(error?.message ?? "此帳號沒有權限。");
     throw new Error(error?.message ?? "Request failed");
   }
-
-  if (!isJson) {
-    const text = await response.text();
-    if (text.trim().startsWith("<!doctype") || text.trim().startsWith("<html")) {
-      throw new Error(
-        "API returned HTML instead of JSON. Start Firebase emulators, set VITE_API_BASE_URL, or use the built-in dev mock API."
-      );
-    }
-    throw new Error("API returned a non-JSON response.");
-  }
-
-  return response.json() as Promise<T>;
 }
 
-async function requestBlob(path: string, init?: RequestInit, hasRetriedAuth = false): Promise<Blob> {
-  const token = USE_MOCK_API ? null : await getIdToken();
-  const response = await fetch(`${API_BASE_URL ?? "/api"}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(init?.headers ?? {})
-    }
-  });
-
+async function parseApiError(response: Response) {
   const contentType = response.headers.get("content-type") ?? "";
-  const isJson = contentType.includes("application/json");
-
-  if (!response.ok) {
-    const error = isJson ? await response.json().catch(() => ({ message: response.statusText })) : null;
-    if (response.status === 401 && !hasRetriedAuth && !USE_MOCK_API) {
-      try {
-        const refreshedToken = await getIdToken({ forceRefresh: true });
-        if (refreshedToken) {
-          return requestBlob(
-            path,
-            {
-              ...init,
-              headers: {
-                ...(init?.headers ?? {}),
-                Authorization: `Bearer ${refreshedToken}`
-              }
-            },
-            true
-          );
-        }
-      } catch {
-        // Fall through to the auth error path below.
-      }
-      markRequiresLogin();
-      throw new ApiAuthError(error?.message ?? "登入已過期，請重新登入。");
-    }
-    if (response.status === 401) {
-      markRequiresLogin();
-      throw new ApiAuthError(error?.message ?? "登入已過期，請重新登入。");
-    }
-    if (response.status === 403) throw new Error(error?.message ?? "此帳號沒有權限。");
-    throw new Error(error?.message ?? "Request failed");
-  }
-
-  if (isJson) {
-    const error = await response.json().catch(() => null);
-    throw new Error(error?.message ?? "API returned JSON instead of audio.");
-  }
-
-  return response.blob();
+  if (!contentType.includes("application/json")) return null;
+  return response.json().catch(() => ({ message: response.statusText })) as Promise<{ message?: string }>;
 }
+
+const apiFetch = new ApiFetch(API_BASE_URL ?? "/api", {
+  getIdToken,
+  markRequiresLogin,
+  useMockApi: USE_MOCK_API
+});
 
 const liveApi = {
-  dashboard: () => request<DashboardResponse>("/dashboard"),
-  settings: () => request<AppSettings>("/settings"),
+  dashboard: () => apiFetch.json<DashboardResponse>("/dashboard"),
+  settings: () => apiFetch.json<AppSettings>("/settings"),
   updateSettings: (body: UpdateSettingsRequest) =>
-    request<AppSettings>("/settings", { method: "PUT", body: JSON.stringify(body) }),
-  sections: () => request<SectionSummary[]>("/sections"),
+    apiFetch.json<AppSettings>("/settings", { method: "PUT", body: JSON.stringify(body) }),
+  sections: () => apiFetch.json<SectionSummary[]>("/sections"),
   createSection: (body: CreateSectionRequest) =>
-    request<SectionSummary>("/sections", { method: "POST", body: JSON.stringify(body) }),
+    apiFetch.json<SectionSummary>("/sections", { method: "POST", body: JSON.stringify(body) }),
   deleteSection: (sectionId: string) =>
-    request<DeleteSectionResponse>(`/sections/${sectionId}`, { method: "DELETE" }),
-  generateWord: (body: GenerateWordRequest) =>
-    request<GeneratedWord>("/generate-word", { method: "POST", body: JSON.stringify(body) }),
+    apiFetch.json<DeleteSectionResponse>(`/sections/${sectionId}`, { method: "DELETE" }),
+  generateWord: (body: GenerateWordRequest, options?: ApiRequestOptions) =>
+    apiFetch.json<GeneratedWord>("/generate-word", { method: "POST", body: JSON.stringify(body) }, options),
   createCard: (body: CreateCardRequest) =>
-    request<{ id: string }>("/cards", { method: "POST", body: JSON.stringify(body) }),
+    apiFetch.json<{ id: string }>("/cards", { method: "POST", body: JSON.stringify(body) }),
   deleteCard: (sectionId: string, cardId: string) =>
-    request<{ id: string }>(`/cards/${cardId}?sectionId=${encodeURIComponent(sectionId)}`, { method: "DELETE" }),
+    apiFetch.json<{ id: string }>(`/cards/${cardId}?sectionId=${encodeURIComponent(sectionId)}`, { method: "DELETE" }),
   cards: (params: {
     sectionId: string;
     dueBefore?: string;
@@ -161,12 +143,12 @@ const liveApi = {
     if (params.dueBefore) query.set("dueBefore", params.dueBefore);
     if (params.limit) query.set("limit", String(params.limit));
     if (params.cursor) query.set("cursor", params.cursor);
-    return request<PaginatedCardsResponse>(`/cards?${query.toString()}`);
+    return apiFetch.json<PaginatedCardsResponse>(`/cards?${query.toString()}`);
   },
   review: (body: CreateReviewRequest) =>
-    request<{ nextDue: string }>("/reviews", { method: "POST", body: JSON.stringify(body) }),
-  speech: (body: CreateSpeechRequest) =>
-    requestBlob("/speech", { method: "POST", body: JSON.stringify(body) })
+    apiFetch.json<{ nextDue: string }>("/reviews", { method: "POST", body: JSON.stringify(body) }),
+  speech: (body: CreateSpeechRequest, options?: ApiRequestOptions) =>
+    apiFetch.blob("/speech", { method: "POST", body: JSON.stringify(body) }, options)
 };
 
 export const api = USE_MOCK_API ? createMockApi() : liveApi;
