@@ -76,8 +76,8 @@ For local development, create:
 
 ```txt
 apps/web/.env.local
-functions/.env.local
-functions/.secret.local
+.env.local
+.secret.local
 ```
 
 Example `apps/web/.env.local`:
@@ -90,7 +90,9 @@ VITE_FIREBASE_PROJECT_ID=YOUR_PROJECT_ID
 VITE_USE_AUTH_EMULATOR=true
 ```
 
-Example `functions/.env.local`:
+`VITE_API_BASE_URL` is only used by the frontend in Vite dev mode. Production builds always call same-origin `/api`, which Firebase Hosting rewrites to the deployed Function. Do not set a production `VITE_API_BASE_URL` unless the API is intentionally hosted outside Firebase Hosting.
+
+Example root `.env.local` for Functions:
 
 ```env
 LLM_PROVIDER=groq
@@ -100,13 +102,13 @@ ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 AUTH_DISABLED_FOR_DEV=false
 ```
 
-Example `functions/.secret.local`:
+Example root `.secret.local`:
 
 ```env
 LLM_API_KEY=<your-provider-api-key>
 ```
 
-Do not commit `.env.local` or `.secret.local` files.
+Do not commit `.env.local`, `.env.<project>`, or `.secret.local` files.
 
 ## Local Development
 
@@ -317,11 +319,11 @@ For production, prefer Firebase Secret Manager on Blaze:
 firebase functions:secrets:set LLM_API_KEY
 ```
 
-If you are intentionally not using Secret Manager, set the production Functions env file instead. The filename must match the selected Firebase project alias or project ID, for example:
+If you are intentionally not using Secret Manager, set the production Functions env file in the repository root. The filename must match the selected Firebase project alias or project ID, for example:
 
 ```txt
-functions/.env.dev
-functions/.env.YOUR_PROJECT_ID
+.env.dev
+.env.YOUR_PROJECT_ID
 ```
 
 Required production values include:
@@ -337,11 +339,27 @@ AUTH_DISABLED_FOR_DEV=false
 
 No production allow-list UID is required. Access is controlled by Firebase Auth and per-user `ownerUid` scoping in Functions.
 
-Build and deploy:
+The production frontend should not set `VITE_API_BASE_URL`. Built Hosting assets call same-origin `/api`, and Firebase Hosting rewrites those requests to the deployed `api` Function. `VITE_API_BASE_URL` is only for Vite dev mode or for intentionally hosting the API outside Firebase Hosting.
+
+Deploy frontend-only changes, such as `apps/web/src/*`, styles, or frontend env changes:
+
+```sh
+npm run build -w apps/web
+firebase deploy --only hosting
+```
+
+Deploy backend, shared package, Firestore, or Firebase config changes, such as `functions/src/*`, `packages/shared/*`, `firebase.json`, `firestore.rules`, or `firestore.indexes.json`:
 
 ```sh
 npm run build
-firebase deploy --only firestore,functions,hosting
+firebase deploy
+```
+
+If Firebase asks how many days to keep container images before deletion, `7` is a reasonable default for this project:
+
+```txt
+How many days do you want to keep container images before they're deleted?
+7
 ```
 
 Cloud Functions usually requires the Firebase Blaze plan. Firestore has free quotas, but production usage should still be monitored with budget alerts.

@@ -294,7 +294,7 @@ app.use((error: unknown, _req: express.Request, res: express.Response, _next: ex
 
 export const api = onRequest(
   {
-    region: "us-central1"
+    region: "asia-east1"
   },
   app
 );

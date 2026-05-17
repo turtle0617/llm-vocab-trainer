@@ -9,7 +9,10 @@
     "rewrites": [
       {
         "source": "/api/**",
-        "function": "api"
+        "function": {
+          "functionId": "api",
+          "region": "asia-east1"
+        }
       },
       {
         "source": "**",
@@ -19,9 +22,34 @@
   },
   "functions": [
     {
-      "source": "functions",
+      "source": ".",
       "codebase": "default",
-      "runtime": "nodejs22"
+      "runtime": "nodejs22",
+      "ignore": [
+        ".git",
+        ".runtimeconfig.json",
+        ".firebase",
+        ".firebase-emulator-data",
+        ".firebase-config",
+        ".npm-cache",
+        "node_modules",
+        "**/node_modules/**",
+        ".env*",
+        ".secret.local",
+        "**/.secret.local",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "firestore-debug.log",
+        "ui-debug.log",
+        "**/firebase-debug.log",
+        "**/firestore-debug.log",
+        "**/ui-debug.log",
+        "*.tsbuildinfo"
+      ],
+      "predeploy": [
+        "npm run build -w packages/shared",
+        "npm run build -w functions"
+      ]
     }
   ],
   "firestore": {

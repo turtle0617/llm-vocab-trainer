@@ -14,7 +14,7 @@ import type {
 import { desiredRetentionByIntensity, ReviewRating, type UpdateSettingsRequest } from "@vocab/shared";
 import { getIdToken, markRequiresLogin } from "./auth";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+const API_BASE_URL = import.meta.env.DEV ? import.meta.env.VITE_API_BASE_URL : undefined;
 const USE_MOCK_API = import.meta.env.DEV && !API_BASE_URL;
 type ApiRequestOptions = { signal?: AbortSignal };
 type AuthAdapter = {

@@ -3,6 +3,10 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "main": "functions/lib/index.js",
+  "engines": {
+    "node": "22"
+  },
   "workspaces": [
     "packages/shared",
     "apps/web",
