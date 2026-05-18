@@ -8,6 +8,7 @@ import {
   type DashboardResponse,
   type ReviewIntensity,
   type SectionSummary,
+  type SyncResponse,
   type VocabCard
 } from "@vocab/shared";
 import { decodeCursor, encodeCursor } from "./pagination.js";
@@ -81,11 +82,46 @@ export async function getSettings(db: Firestore, ownerUid: string): Promise<AppS
   return createSettings(reviewIntensity, data.updatedAt ?? new Date().toISOString());
 }
 
+export async function getSyncDelta(db: Firestore, ownerUid: string, since: string): Promise<SyncResponse> {
+  const [dashboardChanged, settings] = await Promise.all([hasDashboardChangesSince(db, ownerUid, since), getSettings(db, ownerUid)]);
+  const settingsChanged = settings.updatedAt > since;
+
+  return {
+    serverSyncedAt: new Date().toISOString(),
+    ...(dashboardChanged ? { dashboard: await getDashboard(db, ownerUid) } : {}),
+    ...(settingsChanged ? { settings } : {})
+  };
+}
+
 export async function updateSettings(db: Firestore, reviewIntensity: ReviewIntensity, ownerUid?: string): Promise<AppSettings> {
   const settings = createSettings(reviewIntensity, new Date().toISOString());
   if (!ownerUid) throw new RepositoryError(401, "Authentication is required.");
   await db.collection("settings").doc(ownerUid).set({ ...settings, ownerUid }, { merge: true });
   return settings;
+}
+
+async function hasDashboardChangesSince(db: Firestore, ownerUid: string, since: string) {
+  const [sections, cards, reviews] = await Promise.all([
+    db
+      .collection("sections")
+      .where("ownerUid", "==", ownerUid)
+      .where("updatedAt", ">", since)
+      .limit(1)
+      .get(),
+    db
+      .collection("cards")
+      .where("ownerUid", "==", ownerUid)
+      .where("updatedAt", ">", since)
+      .limit(1)
+      .get(),
+    db
+      .collection("reviewLogs")
+      .where("ownerUid", "==", ownerUid)
+      .where("reviewedAt", ">", since)
+      .limit(1)
+      .get()
+  ]);
+  return !sections.empty || !cards.empty || !reviews.empty;
 }
 
 export async function createCard(db: Firestore, body: CreateCardRequest, fsrs: unknown, ownerUid: string) {

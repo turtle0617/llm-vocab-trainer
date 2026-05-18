@@ -9,13 +9,15 @@ import type {
   PaginatedCardsResponse,
   AppSettings,
   DeleteSectionResponse,
-  SectionSummary
+  SectionSummary,
+  SyncResponse
 } from "@vocab/shared";
 import { desiredRetentionByIntensity, ReviewRating, type UpdateSettingsRequest } from "@vocab/shared";
 import { getIdToken, markRequiresLogin } from "./auth";
 
 const API_BASE_URL = import.meta.env.DEV ? import.meta.env.VITE_API_BASE_URL : undefined;
 const USE_MOCK_API = import.meta.env.DEV && !API_BASE_URL;
+const TRANSIENT_RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
 type ApiRequestOptions = { signal?: AbortSignal };
 type AuthAdapter = {
   getIdToken: typeof getIdToken;
@@ -68,27 +70,43 @@ class ApiFetch {
     path: string,
     init?: RequestInit,
     options?: ApiRequestOptions,
-    hasRetriedAuth = false,
+    retryAttempt = 0,
     tokenOverride?: string
   ): Promise<Response> {
-    const token = this.auth.useMockApi ? null : (tokenOverride ?? await this.auth.getIdToken());
-    const response = await fetch(`${this.baseUrl}${path}`, {
-      ...init,
-      signal: options?.signal,
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(init?.headers ?? {})
+    let response: Response;
+    try {
+      const token = this.auth.useMockApi ? null : (tokenOverride ?? await this.auth.getIdToken());
+      response = await fetch(`${this.baseUrl}${path}`, {
+        ...init,
+        signal: options?.signal,
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(init?.headers ?? {})
+        }
+      });
+    } catch (error) {
+      if (shouldRetryRequest(error, options, retryAttempt)) {
+        const delay = TRANSIENT_RETRY_DELAYS_MS[retryAttempt];
+        if (delay === undefined) throw error;
+        await sleep(delay);
+        return this.send(path, init, options, retryAttempt + 1, tokenOverride);
       }
-    });
+      throw error;
+    }
 
     if (response.ok) return response;
+    const retryDelay = TRANSIENT_RETRY_DELAYS_MS[retryAttempt];
+    if (isTransientStatus(response.status) && retryDelay !== undefined) {
+      await sleep(retryDelay);
+      return this.send(path, init, options, retryAttempt + 1, tokenOverride);
+    }
 
     const error = await parseApiError(response);
-    if (response.status === 401 && !hasRetriedAuth && !this.auth.useMockApi) {
+    if (response.status === 401 && !tokenOverride && !this.auth.useMockApi) {
       try {
         const refreshedToken = await this.auth.getIdToken({ forceRefresh: true });
-        if (refreshedToken) return this.send(path, init, options, true, refreshedToken);
+        if (refreshedToken) return this.send(path, init, options, TRANSIENT_RETRY_DELAYS_MS.length, refreshedToken);
       } catch {
         // Fall through to the auth error path below.
       }
@@ -102,6 +120,20 @@ class ApiFetch {
     if (response.status === 403) throw new Error(error?.message ?? "此帳號沒有權限。");
     throw new Error(error?.message ?? "Request failed");
   }
+}
+
+function shouldRetryRequest(error: unknown, options: ApiRequestOptions | undefined, attempt: number) {
+  if (options?.signal?.aborted) return false;
+  if (attempt >= TRANSIENT_RETRY_DELAYS_MS.length) return false;
+  return error instanceof TypeError || error instanceof DOMException;
+}
+
+function isTransientStatus(status: number) {
+  return status === 408 || status === 429 || status >= 500;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => globalThis.setTimeout(resolve, ms));
 }
 
 async function parseApiError(response: Response) {
@@ -118,6 +150,10 @@ const apiFetch = new ApiFetch(API_BASE_URL ?? "/api", {
 
 const liveApi = {
   dashboard: () => apiFetch.json<DashboardResponse>("/dashboard"),
+  sync: (params: { since: string }) => {
+    const query = new URLSearchParams({ since: params.since });
+    return apiFetch.json<SyncResponse>(`/sync?${query.toString()}`);
+  },
   settings: () => apiFetch.json<AppSettings>("/settings"),
   updateSettings: (body: UpdateSettingsRequest) =>
     apiFetch.json<AppSettings>("/settings", { method: "PUT", body: JSON.stringify(body) }),
@@ -263,6 +299,19 @@ function createMockApi(): typeof liveApi {
         },
         reviewTrend,
         sections: state.sections
+      };
+    },
+    async sync(params) {
+      const state = hydrate(load());
+      const dashboard = await this.dashboard();
+      return {
+        serverSyncedAt: new Date().toISOString(),
+        ...(state.sections.some((section) => section.updatedAt > params.since) ||
+        state.cards.some((card) => card.updatedAt > params.since) ||
+        state.reviews.some((review) => review.reviewedAt > params.since)
+          ? { dashboard }
+          : {}),
+        ...(state.settings.updatedAt > params.since ? { settings: state.settings } : {})
       };
     },
     async settings() {

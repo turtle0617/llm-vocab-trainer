@@ -20,6 +20,7 @@ import type { DashboardResponse, GeneratedWord, SectionSummary, VocabCard } from
 import { ReviewRating } from "@vocab/shared";
 import { api } from "./api";
 import { getAuthStatus, getCurrentUserUid, signIn, signOut, subscribeAuthState, type AuthStatus } from "./auth";
+import { createBackgroundSyncScheduler, runExclusiveSync } from "./background-sync";
 import { cacheCards, cacheSections, getCachedCards, getPendingReviewCount, queueReview, removeCachedCard } from "./offline";
 import { syncPendingReviews } from "./sync";
 import {
@@ -33,7 +34,7 @@ import {
 } from "./ui-logic";
 
 type View = "dashboard" | "sections" | "add" | "review" | "settings";
-type ToastState = { message: string; tone?: "success" | "warning" };
+type ToastState = { message: string; tone?: "success" | "warning" | "info" };
 type EmptyAction = { label: string; onClick: () => void; variant?: "primary" | "secondary" | "review" | "add" };
 type SpeechController = {
   playingText: string | null;
@@ -54,6 +55,10 @@ export function App() {
   const [toast, setToast] = useState<ToastState | null>(null);
   const [reviewIntensity, setReviewIntensity] = useState<ReviewIntensityId>("standard");
   const [settingsSaving, setSettingsSaving] = useState(false);
+  const syncInProgressRef = useRef(false);
+  const syncLastCompletedAtRef = useRef(0);
+  const foregroundSyncDebounceTimerRef = useRef<number | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
   const speech = useSpeechPlayer((message) => notify(message, "warning"));
 
   const selectedSection = useMemo(
@@ -62,8 +67,12 @@ export function App() {
   );
 
   function notify(message: string, tone: ToastState["tone"] = "success") {
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     setToast({ message, tone });
-    window.setTimeout(() => setToast(null), 3000);
+    toastTimerRef.current = window.setTimeout(() => {
+      setToast(null);
+      toastTimerRef.current = null;
+    }, 3000);
   }
 
   function openAdd(sectionId?: string) {
@@ -80,13 +89,17 @@ export function App() {
     setError("");
     try {
       const next = await api.dashboard();
-      setDashboard(next);
-      setSections(next.sections);
-      if (!selectedSectionId && next.sections[0]) setSelectedSectionId(getPrimarySection(next.sections)?.id ?? "");
-      await cacheSections(next.sections);
+      await applyDashboard(next);
     } catch (err) {
       setError(formatAppError(err));
     }
+  }
+
+  async function applyDashboard(next: DashboardResponse) {
+    setDashboard(next);
+    setSections(next.sections);
+    if (!selectedSectionId && next.sections[0]) setSelectedSectionId(getPrimarySection(next.sections)?.id ?? "");
+    await cacheSections(next.sections);
   }
 
   async function loadSettings() {
@@ -118,21 +131,36 @@ export function App() {
       setPendingReviewCount(await getPendingReviewCount(getCurrentUserUid()));
     }
 
-    async function loadAuthenticatedApp() {
-      setBootstrapping(true);
-      const syncResult = await syncPendingReviews();
-      if (!cancelled && syncResult.status === "partial") {
-        notify("部分離線複習尚未同步，登入或連線後會繼續同步。", "warning");
-      }
-      if (!cancelled) {
-        await loadDashboard();
-        await loadSettings();
-        await refreshPendingCount();
-        if (syncResult.status === "complete") {
-          setSyncVersion((value) => value + 1);
+    async function syncAuthenticatedApp(options: { showLoading: boolean; showToast: boolean; fullSync: boolean }) {
+      await runExclusiveSync(syncInProgressRef, async () => {
+        if (options.showLoading) setBootstrapping(true);
+        if (options.showToast) notify("正在同步資料...", "info");
+        try {
+          const syncResult = await syncPendingReviews();
+          if (!cancelled && syncResult.status === "partial") {
+            notify("部分離線複習尚未同步，登入或連線後會繼續同步。", "warning");
+          }
+          if (!cancelled) {
+            if (options.fullSync || syncLastCompletedAtRef.current === 0) {
+              await loadDashboard();
+              await loadSettings();
+              syncLastCompletedAtRef.current = Date.now();
+            } else {
+              const delta = await api.sync({ since: new Date(syncLastCompletedAtRef.current).toISOString() });
+              if (delta.dashboard) await applyDashboard(delta.dashboard);
+              if (delta.settings) setReviewIntensity(delta.settings.reviewIntensity);
+              syncLastCompletedAtRef.current = new Date(delta.serverSyncedAt).getTime();
+            }
+            await refreshPendingCount();
+            if (syncResult.status === "complete") {
+              setSyncVersion((value) => value + 1);
+              if (options.showToast) notify("同步完成");
+            }
+          }
+        } finally {
+          if (!cancelled && options.showLoading) setBootstrapping(false);
         }
-        setBootstrapping(false);
-      }
+      });
     }
 
     const unsubscribe = subscribeAuthState((nextStatus) => {
@@ -141,32 +169,40 @@ export function App() {
       setAuthError("");
       void refreshPendingCount();
       if (nextStatus === "authenticated") {
-        void loadAuthenticatedApp();
+        void syncAuthenticatedApp({ showLoading: true, showToast: false, fullSync: true });
       } else {
         setBootstrapping(false);
       }
     });
 
-    function handleOnline() {
-      if (getAuthStatus() !== "authenticated") return;
-      void loadAuthenticatedApp();
-    }
+    const backgroundSync = createBackgroundSyncScheduler({
+      clearTimeout: (timerId) => window.clearTimeout(timerId),
+      getAuthStatus,
+      getLastCompletedAt: () => syncLastCompletedAtRef.current,
+      getVisibilityState: () => document.visibilityState,
+      now: Date.now,
+      setTimeout: (callback, delay) => {
+        foregroundSyncDebounceTimerRef.current = window.setTimeout(callback, delay);
+        return foregroundSyncDebounceTimerRef.current;
+      },
+      sync: () => void syncAuthenticatedApp({ showLoading: false, showToast: true, fullSync: false })
+    });
 
-    function handleForegroundSync() {
-      if (document.visibilityState !== "visible") return;
-      if (getAuthStatus() !== "authenticated") return;
-      void loadAuthenticatedApp();
-    }
-
-    window.addEventListener("online", handleOnline);
-    window.addEventListener("focus", handleOnline);
-    document.addEventListener("visibilitychange", handleForegroundSync);
+    window.addEventListener("online", backgroundSync.schedule);
+    window.addEventListener("focus", backgroundSync.schedule);
+    document.addEventListener("visibilitychange", backgroundSync.schedule);
     return () => {
       cancelled = true;
       unsubscribe();
-      window.removeEventListener("online", handleOnline);
-      window.removeEventListener("focus", handleOnline);
-      document.removeEventListener("visibilitychange", handleForegroundSync);
+      window.removeEventListener("online", backgroundSync.schedule);
+      window.removeEventListener("focus", backgroundSync.schedule);
+      document.removeEventListener("visibilitychange", backgroundSync.schedule);
+      backgroundSync.dispose();
+      foregroundSyncDebounceTimerRef.current = null;
+      if (toastTimerRef.current) {
+        window.clearTimeout(toastTimerRef.current);
+        toastTimerRef.current = null;
+      }
     };
   }, []);
 
@@ -1225,7 +1261,12 @@ function Alert({ message }: { message: string }) {
 }
 
 function Toast({ message, tone = "success" }: ToastState) {
-  return <div className={`toast ${tone}`}>{message}</div>;
+  return (
+    <div className={`toast ${tone}`}>
+      <span className={`toast-dot ${tone}`} />
+      <span>{message}</span>
+    </div>
+  );
 }
 
 function InlineNotice({

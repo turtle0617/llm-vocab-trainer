@@ -111,6 +111,12 @@ export interface DashboardResponse {
   sections: SectionSummary[];
 }
 
+export interface SyncResponse {
+  serverSyncedAt: string;
+  dashboard?: DashboardResponse;
+  settings?: AppSettings;
+}
+
 export interface PaginatedCardsResponse {
   items: VocabCard[];
   nextCursor: string | null;

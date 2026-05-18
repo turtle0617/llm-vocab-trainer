@@ -92,6 +92,49 @@ describe("live API client auth", () => {
     expect(authMock.getIdToken).toHaveBeenCalledTimes(1);
   });
 
+  it("retries transient server errors with exponential backoff", async () => {
+    const timeoutSpy = vi.spyOn(globalThis, "setTimeout").mockImplementation((callback: TimerHandler) => {
+      if (typeof callback === "function") callback();
+      return 0 as unknown as ReturnType<typeof setTimeout>;
+    });
+    authMock.getIdToken.mockResolvedValue("token-a");
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse(503, { message: "try later" }))
+        .mockResolvedValueOnce(jsonResponse(502, { message: "bad gateway" }))
+        .mockResolvedValueOnce(jsonResponse(200, { totals: { dueToday: 0, reviewedToday: 0, streakDays: 0, totalCards: 0 }, reviewTrend: [], sections: [] }))
+    );
+
+    const { api } = await import("./api");
+    await expect(api.dashboard()).resolves.toEqual({
+      totals: { dueToday: 0, reviewedToday: 0, streakDays: 0, totalCards: 0 },
+      reviewTrend: [],
+      sections: []
+    });
+
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(timeoutSpy).toHaveBeenNthCalledWith(1, expect.any(Function), 1000);
+    expect(timeoutSpy).toHaveBeenNthCalledWith(2, expect.any(Function), 2000);
+    timeoutSpy.mockRestore();
+  });
+
+  it("requests sync deltas with the last sync timestamp", async () => {
+    authMock.getIdToken.mockResolvedValue("token-a");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(200, { serverSyncedAt: "2026-05-18T00:00:00.000Z" })));
+
+    const { api } = await import("./api");
+    await api.sync({ since: "2026-05-17T00:00:00.000Z" });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "https://api.example.test/api/sync?since=2026-05-17T00%3A00%3A00.000Z",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer token-a" })
+      })
+    );
+  });
+
   it("returns a speech audio blob from live requests", async () => {
     const audio = new Blob(["wav"], { type: "audio/wav" });
     const controller = new AbortController();

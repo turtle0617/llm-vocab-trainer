@@ -30,6 +30,7 @@ import {
   getCardsPage,
   getDashboard,
   getSettings,
+  getSyncDelta,
   RepositoryError,
   getSectionSummaries,
   updateSettings,
@@ -84,6 +85,21 @@ app.get("/api/settings", async (_req, res, next) => {
   try {
     const auth = getAuthContext(res);
     res.json(await getSettings(db, auth.uid));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/sync", async (req, res, next) => {
+  try {
+    const auth = getAuthContext(res);
+    const query = z
+      .object({
+        since: z.string().datetime()
+      })
+      .strict()
+      .parse(req.query);
+    res.json(await getSyncDelta(db, auth.uid, query.since));
   } catch (error) {
     next(error);
   }

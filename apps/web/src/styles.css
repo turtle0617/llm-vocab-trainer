@@ -783,23 +783,58 @@ blockquote small {
 }
 
 .toast {
-  border-radius: 8px;
+  align-items: center;
+  backdrop-filter: blur(8px);
+  border: 1px solid transparent;
+  border-radius: 14px;
   box-shadow: var(--shadow-floating);
-  color: var(--color-surface);
-  font-weight: 800;
-  padding: 12px 16px;
+  color: var(--color-text);
+  display: inline-flex;
+  font-weight: 700;
+  gap: 10px;
+  min-width: 220px;
+  padding: 12px 14px;
   position: fixed;
   right: 24px;
   top: 18px;
+  transition: transform 160ms ease, opacity 160ms ease;
   z-index: 30;
 }
 
 .toast.success {
-  background: var(--color-success-solid);
+  background: color-mix(in srgb, var(--color-success-soft) 90%, white);
+  border-color: var(--color-success-border);
+  color: var(--color-success-text);
 }
 
 .toast.warning {
+  background: color-mix(in srgb, var(--color-warning-soft) 92%, white);
+  border-color: var(--color-warning-border);
+  color: var(--color-warning-text);
+}
+
+.toast.info {
+  background: color-mix(in srgb, var(--color-info-soft) 92%, white);
+  border-color: var(--color-info-border);
+  color: var(--color-info-text);
+}
+
+.toast-dot {
+  border-radius: 999px;
+  height: 10px;
+  width: 10px;
+}
+
+.toast-dot.success {
+  background: var(--color-success-solid);
+}
+
+.toast-dot.warning {
   background: var(--color-warning-solid);
+}
+
+.toast-dot.info {
+  background: var(--color-info-solid);
 }
 
 .inline-notice {
@@ -1006,7 +1041,9 @@ blockquote small {
   }
 
   .toast {
-    left: 18px;
-    right: 18px;
+    left: 16px;
+    min-width: 0;
+    right: 16px;
+    top: 12px;
   }
 }
