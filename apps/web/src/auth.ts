@@ -1,4 +1,5 @@
 import { initializeApp, type FirebaseApp } from "firebase/app";
+import { getToken, initializeAppCheck, ReCaptchaV3Provider, type AppCheck } from "firebase/app-check";
 import {
   connectAuthEmulator,
   getAuth,
@@ -16,6 +17,7 @@ const listeners = new Set<AuthListener>();
 let status: AuthStatus = useMockAuth ? "authenticated" : "loading";
 let app: FirebaseApp | null = null;
 let auth: Auth | null = null;
+let appCheck: AppCheck | null = null;
 let emulatorConnected = false;
 
 export async function signIn(email: string, password: string) {
@@ -41,6 +43,11 @@ export async function getIdToken(options: { forceRefresh?: boolean } = {}) {
   const user = getFirebaseAuth().currentUser;
   if (!user) return null;
   return user.getIdToken(options.forceRefresh ?? false);
+}
+
+export async function getAppCheckToken(options: { forceRefresh?: boolean } = {}) {
+  if (useMockAuth) return null;
+  return (await getToken(getFirebaseAppCheck(), options.forceRefresh ?? false)).token;
 }
 
 export function getCurrentUserUid() {
@@ -81,13 +88,10 @@ function setStatus(next: AuthStatus) {
 }
 
 function getFirebaseAuth() {
+  const firebaseApp = getFirebaseApp();
+
   if (!auth) {
-    app = initializeApp({
-      apiKey: requireEnv("VITE_FIREBASE_API_KEY"),
-      authDomain: requireEnv("VITE_FIREBASE_AUTH_DOMAIN"),
-      projectId: requireEnv("VITE_FIREBASE_PROJECT_ID")
-    });
-    auth = getAuth(app);
+    auth = getAuth(firebaseApp);
   }
 
   if (import.meta.env.VITE_USE_AUTH_EMULATOR === "true" && !emulatorConnected) {
@@ -98,8 +102,49 @@ function getFirebaseAuth() {
   return auth;
 }
 
-function requireEnv(name: "VITE_FIREBASE_API_KEY" | "VITE_FIREBASE_AUTH_DOMAIN" | "VITE_FIREBASE_PROJECT_ID") {
+function getFirebaseApp() {
+  if (!app) {
+    app = initializeApp({
+      apiKey: requireEnv("VITE_FIREBASE_API_KEY"),
+      authDomain: requireEnv("VITE_FIREBASE_AUTH_DOMAIN"),
+      projectId: requireEnv("VITE_FIREBASE_PROJECT_ID")
+    });
+  }
+
+  if (!app) throw new Error("Firebase app failed to initialize.");
+  return app;
+}
+
+function getFirebaseAppCheck() {
+  if (!appCheck) {
+    const debugToken = import.meta.env.VITE_APPCHECK_DEBUG_TOKEN;
+    if (debugToken) {
+      self.FIREBASE_APPCHECK_DEBUG_TOKEN = debugToken === "true" ? true : debugToken;
+    }
+
+    appCheck = initializeAppCheck(getFirebaseApp(), {
+      provider: new ReCaptchaV3Provider(requireEnv("VITE_RECAPTCHA_SITE_KEY")),
+      isTokenAutoRefreshEnabled: true
+    });
+  }
+
+  return appCheck;
+}
+
+function requireEnv(
+  name:
+    | "VITE_FIREBASE_API_KEY"
+    | "VITE_FIREBASE_AUTH_DOMAIN"
+    | "VITE_FIREBASE_PROJECT_ID"
+    | "VITE_RECAPTCHA_SITE_KEY"
+) {
   const value = import.meta.env[name];
   if (!value) throw new Error(`${name} is required when using the live API.`);
   return value;
+}
+
+declare global {
+  interface Window {
+    FIREBASE_APPCHECK_DEBUG_TOKEN?: boolean | string;
+  }
 }

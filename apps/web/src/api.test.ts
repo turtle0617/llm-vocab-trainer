@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ReviewRating } from "@vocab/shared";
 
 const authMock = vi.hoisted(() => ({
+  getAppCheckToken: vi.fn(),
   getIdToken: vi.fn(),
   markRequiresLogin: vi.fn()
 }));
@@ -11,6 +12,8 @@ vi.mock("./auth", () => authMock);
 describe("live API client auth", () => {
   beforeEach(() => {
     vi.stubEnv("VITE_API_BASE_URL", "https://api.example.test/api");
+    authMock.getAppCheckToken.mockReset();
+    authMock.getAppCheckToken.mockResolvedValue("app-check-token");
     authMock.getIdToken.mockReset();
     authMock.markRequiresLogin.mockReset();
   });
@@ -32,6 +35,22 @@ describe("live API client auth", () => {
       "https://api.example.test/api/sections",
       expect.objectContaining({
         headers: expect.objectContaining({ Authorization: "Bearer token-a" })
+      })
+    );
+  });
+
+  it("adds an App Check token to live requests", async () => {
+    authMock.getIdToken.mockResolvedValue("token-a");
+    authMock.getAppCheckToken.mockResolvedValue("app-check-a");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(200, { sections: [] })));
+
+    const { api } = await import("./api");
+    await api.sections();
+
+    expect(fetch).toHaveBeenCalledWith(
+      "https://api.example.test/api/sections",
+      expect.objectContaining({
+        headers: expect.objectContaining({ "X-Firebase-AppCheck": "app-check-a" })
       })
     );
   });

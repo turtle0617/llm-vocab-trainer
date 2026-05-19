@@ -38,6 +38,7 @@ import {
 } from "./repositories.js";
 import { generateWordWithProvider } from "./llm/providers.js";
 import { generateSpeech, SpeechConfigError, SpeechProviderError } from "./speech.js";
+import { AppCheckError, appCheckMiddleware } from "./app-check.js";
 
 initializeApp();
 
@@ -61,6 +62,7 @@ app.use(
   })
 );
 
+app.use("/api", appCheckMiddleware);
 app.use("/api", authMiddleware);
 
 app.get("/api/dashboard", async (_req, res, next) => {
@@ -278,6 +280,10 @@ app.post("/api/reviews", async (req, res, next) => {
 
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   if (error instanceof AuthError || error instanceof RepositoryError) {
+    res.status(error.status).json({ message: error.message });
+    return;
+  }
+  if (error instanceof AppCheckError) {
     res.status(error.status).json({ message: error.message });
     return;
   }

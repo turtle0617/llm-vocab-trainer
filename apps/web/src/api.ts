@@ -13,7 +13,7 @@ import type {
   SyncResponse
 } from "@vocab/shared";
 import { desiredRetentionByIntensity, ReviewRating, type UpdateSettingsRequest } from "@vocab/shared";
-import { getIdToken, markRequiresLogin } from "./auth";
+import { getAppCheckToken, getIdToken, markRequiresLogin } from "./auth";
 
 const API_BASE_URL = import.meta.env.DEV ? import.meta.env.VITE_API_BASE_URL : undefined;
 const USE_MOCK_API = import.meta.env.DEV && !API_BASE_URL;
@@ -21,6 +21,7 @@ const TRANSIENT_RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
 type ApiRequestOptions = { signal?: AbortSignal };
 type AuthAdapter = {
   getIdToken: typeof getIdToken;
+  getAppCheckToken: typeof getAppCheckToken;
   markRequiresLogin: typeof markRequiresLogin;
   useMockApi: boolean;
 };
@@ -76,12 +77,14 @@ class ApiFetch {
     let response: Response;
     try {
       const token = this.auth.useMockApi ? null : (tokenOverride ?? await this.auth.getIdToken());
+      const appCheckToken = this.auth.useMockApi ? null : await this.auth.getAppCheckToken();
       response = await fetch(`${this.baseUrl}${path}`, {
         ...init,
         signal: options?.signal,
         headers: {
           "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(appCheckToken ? { "X-Firebase-AppCheck": appCheckToken } : {}),
           ...(init?.headers ?? {})
         }
       });
@@ -143,6 +146,7 @@ async function parseApiError(response: Response) {
 }
 
 const apiFetch = new ApiFetch(API_BASE_URL ?? "/api", {
+  getAppCheckToken,
   getIdToken,
   markRequiresLogin,
   useMockApi: USE_MOCK_API
