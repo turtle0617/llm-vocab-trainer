@@ -107,6 +107,7 @@ function getFirebaseApp() {
     app = initializeApp({
       apiKey: requireEnv("VITE_FIREBASE_API_KEY"),
       authDomain: requireEnv("VITE_FIREBASE_AUTH_DOMAIN"),
+      appId: requireEnv("VITE_FIREBASE_APP_ID"),
       projectId: requireEnv("VITE_FIREBASE_PROJECT_ID")
     });
   }
@@ -118,7 +119,7 @@ function getFirebaseApp() {
 function getFirebaseAppCheck() {
   if (!appCheck) {
     const debugToken = import.meta.env.VITE_APPCHECK_DEBUG_TOKEN;
-    if (debugToken) {
+    if (import.meta.env.DEV && debugToken) {
       self.FIREBASE_APPCHECK_DEBUG_TOKEN = debugToken === "true" ? true : debugToken;
     }
 
@@ -135,6 +136,7 @@ function requireEnv(
   name:
     | "VITE_FIREBASE_API_KEY"
     | "VITE_FIREBASE_AUTH_DOMAIN"
+    | "VITE_FIREBASE_APP_ID"
     | "VITE_FIREBASE_PROJECT_ID"
     | "VITE_RECAPTCHA_SITE_KEY"
 ) {

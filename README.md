@@ -69,6 +69,7 @@ VITE_API_BASE_URL=http://127.0.0.1:5001/YOUR_PROJECT_ID/us-central1/api/api
 VITE_FIREBASE_API_KEY=
 VITE_FIREBASE_AUTH_DOMAIN=YOUR_PROJECT_ID.firebaseapp.com
 VITE_FIREBASE_PROJECT_ID=YOUR_PROJECT_ID
+VITE_FIREBASE_APP_ID=
 VITE_USE_AUTH_EMULATOR=false
 VITE_RECAPTCHA_SITE_KEY=
 VITE_APPCHECK_DEBUG_TOKEN=
@@ -89,6 +90,7 @@ VITE_API_BASE_URL=http://127.0.0.1:5001/YOUR_PROJECT_ID/us-central1/api/api
 VITE_FIREBASE_API_KEY=<your-web-api-key>
 VITE_FIREBASE_AUTH_DOMAIN=YOUR_PROJECT_ID.firebaseapp.com
 VITE_FIREBASE_PROJECT_ID=YOUR_PROJECT_ID
+VITE_FIREBASE_APP_ID=<your-firebase-web-app-id>
 VITE_USE_AUTH_EMULATOR=true
 VITE_RECAPTCHA_SITE_KEY=<your-recaptcha-v3-site-key>
 VITE_APPCHECK_DEBUG_TOKEN=true
@@ -96,7 +98,7 @@ VITE_APPCHECK_DEBUG_TOKEN=true
 
 `VITE_API_BASE_URL` is only used by the frontend in Vite dev mode. Production builds always call same-origin `/api`, which Firebase Hosting rewrites to the deployed Function. Do not set a production `VITE_API_BASE_URL` unless the API is intentionally hosted outside Firebase Hosting.
 
-`VITE_RECAPTCHA_SITE_KEY` enables Firebase App Check for live API requests using the reCAPTCHA v3 provider. `VITE_APPCHECK_DEBUG_TOKEN=true` is only for local development; the browser console prints a debug token that must be registered in Firebase Console > App Check. Do not commit real App Check debug tokens.
+`VITE_FIREBASE_APP_ID` is required by Firebase App Check. Without it, App Check token exchange requests target `apps/undefined` and fail. `VITE_RECAPTCHA_SITE_KEY` enables Firebase App Check for live API requests using the reCAPTCHA v3 provider. `VITE_APPCHECK_DEBUG_TOKEN=true` is only read in local dev builds; the browser console prints a debug token that must be registered in Firebase Console > App Check. Do not commit real App Check debug tokens.
 
 The backend requires every `/api` request to include a valid `X-Firebase-AppCheck` token before Firebase Auth is checked. Direct curl/script requests without App Check are rejected before they can call LLM, speech, or Firestore logic.
 
