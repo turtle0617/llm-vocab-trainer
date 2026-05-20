@@ -2,6 +2,53 @@
 
 `vocab-pwa` is a multi-deck vocabulary review PWA. It uses FSRS scheduling, Firebase as the backend platform, and an LLM provider to generate bilingual vocabulary content.
 
+## Project Status
+
+This project is built for personal use and small beta deployments. It is not a hosted SaaS product. If you open sign-up to public users, add per-user quotas for LLM and speech endpoints before relying on it in production.
+
+Production deployments should use Firebase App Check, Firebase Auth, budget alerts, and restricted access to any paid LLM or TTS providers.
+
+## Screenshots
+
+![vocab-pwa product demo](docs/assets/demo.png)
+
+The demo image is a generated product mockup for the README. It illustrates the dashboard, AI-assisted word creation, and FSRS review flow without exposing production data.
+
+## Quick Start
+
+Install dependencies:
+
+```sh
+npm install
+```
+
+Create local environment files from `.env.example`, then fill in your Firebase and LLM provider values:
+
+```sh
+cp .env.example .env.local
+cp .env.example apps/web/.env.local
+```
+
+Start the Firebase emulators:
+
+```sh
+npm run dev:functions
+```
+
+Start the frontend in another terminal:
+
+```sh
+npm run dev:web
+```
+
+Open:
+
+```txt
+http://127.0.0.1:5173/
+```
+
+See [Environment Variables](#environment-variables) and [Firebase Setup](#firebase-setup) for the full Firebase/Auth/App Check setup.
+
 ## Features
 
 - Multiple vocabulary decks, called sections in the API.
@@ -30,6 +77,8 @@
 Firebase Hosting can serve the frontend on the Spark plan, but production Firebase Functions require the Blaze plan. Blaze is pay-as-you-go with no-cost usage quotas for several services; budget alerts notify you about spend but do not cap usage automatically.
 
 See [Firebase and LLM Usage Limits](docs/usage-limits.md) for the project-specific cost map, rough review/card-generation usage math, and budget alert setup.
+
+Public deployments should add per-user quotas for `/api/generate-word` and `/api/speech`; App Check reduces non-app traffic but does not replace authorization or rate limiting.
 
 ## FSRS Configuration
 
@@ -395,3 +444,7 @@ npm run deploy         # firebase deploy
 - The frontend never stores the email/password. Firebase Auth manages the session and token refresh.
 - Offline pending reviews remain in IndexedDB when a token expires; after the next successful login, the app syncs them before refreshing the dashboard.
 - Keep `LLM_DEBUG_LOGS=false` in production.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
