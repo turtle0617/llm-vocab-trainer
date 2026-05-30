@@ -7,6 +7,8 @@ describe("word generation prompt", () => {
     expect(prompt.messages[0]?.content).toContain("Return exactly one JSON object");
     expect(prompt.messages[1]?.content).toContain("Traditional Chinese");
     expect(prompt.messages[1]?.content).toContain("partOfSpeech must be one of");
+    expect(prompt.messages[1]?.content).toContain("specific real-life context");
+    expect(prompt.messages[1]?.content).toContain("not simplistic");
   });
 
   it("cleans and dedupes generated output", () => {

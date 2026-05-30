@@ -82,7 +82,9 @@ Requirements:
 - Use concise natural English for enDefinition and examples.
 - Include only common meanings and common parts of speech.
 - For each part of speech, include 1 to 3 natural bilingual example sentences.
-- Keep example sentences short and practical.
+- Write examples with a specific real-life context, useful collocations, or a common situation.
+- Keep examples concise but not simplistic; aim for practical learner sentences of about 8 to 18 English words.
+- Avoid overly generic examples that do not teach usage, such as "The train is late."
 - Avoid rare, archaic, offensive, or likely incorrect usage.
 - normalizedWord must be the lowercase lemma or normalized phrase.
 - partOfSpeech must be one of: noun, verb, adjective, adverb, preposition, conjunction, interjection, phrase, other.
