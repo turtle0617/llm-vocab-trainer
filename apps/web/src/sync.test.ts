@@ -3,7 +3,8 @@ import { ReviewRating } from "@vocab/shared";
 
 const authMock = vi.hoisted(() => ({
   getAuthStatus: vi.fn(),
-  getCurrentUserUid: vi.fn()
+  getCurrentUserUid: vi.fn(),
+  isUsingMockAuth: vi.fn()
 }));
 const apiMock = vi.hoisted(() => ({
   ApiAuthError: class ApiAuthError extends Error {},
@@ -24,6 +25,7 @@ describe("pending review sync", () => {
   beforeEach(() => {
     authMock.getAuthStatus.mockReturnValue("authenticated");
     authMock.getCurrentUserUid.mockReturnValue("user-a");
+    authMock.isUsingMockAuth.mockReturnValue(false);
     apiMock.api.review.mockReset();
     offlineMock.getPendingReviews.mockReset();
     offlineMock.removePendingReview.mockReset();

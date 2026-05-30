@@ -15,8 +15,9 @@ import type {
 import { desiredRetentionByIntensity, ReviewRating, type UpdateSettingsRequest } from "@vocab/shared";
 import { getAppCheckToken, getIdToken, markRequiresLogin } from "./auth";
 
-const API_BASE_URL = import.meta.env.DEV ? import.meta.env.VITE_API_BASE_URL : undefined;
-const USE_MOCK_API = import.meta.env.DEV && !API_BASE_URL;
+const FORCE_MOCK_API = import.meta.env.DEV && import.meta.env.VITE_FORCE_MOCK_API === "true";
+const API_BASE_URL = import.meta.env.DEV && !FORCE_MOCK_API ? import.meta.env.VITE_API_BASE_URL : undefined;
+const USE_MOCK_API = import.meta.env.DEV && (FORCE_MOCK_API || !API_BASE_URL);
 const TRANSIENT_RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
 type ApiRequestOptions = { signal?: AbortSignal };
 type AuthAdapter = {

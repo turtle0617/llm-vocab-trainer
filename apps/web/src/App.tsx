@@ -19,7 +19,15 @@ import {
 import type { DashboardResponse, GeneratedWord, SectionSummary, VocabCard } from "@vocab/shared";
 import { ReviewRating } from "@vocab/shared";
 import { api } from "./api";
-import { getAuthStatus, getCurrentUserUid, signIn, signOut, subscribeAuthState, type AuthStatus } from "./auth";
+import {
+  getAuthStatus,
+  getCurrentUserUid,
+  isUsingMockAuth,
+  signIn,
+  signOut,
+  subscribeAuthState,
+  type AuthStatus
+} from "./auth";
 import { createBackgroundSyncScheduler, runExclusiveSync } from "./background-sync";
 import { cacheCards, cacheSections, getCachedCards, getPendingReviewCount, queueReview, removeCachedCard } from "./offline";
 import { syncPendingReviews } from "./sync";
@@ -169,7 +177,13 @@ export function App() {
       setAuthError("");
       void refreshPendingCount();
       if (nextStatus === "authenticated") {
-        void syncAuthenticatedApp({ showLoading: true, showToast: false, fullSync: true });
+        if (isUsingMockAuth()) {
+          setBootstrapping(false);
+          void loadDashboard();
+          void loadSettings();
+        } else {
+          void syncAuthenticatedApp({ showLoading: true, showToast: false, fullSync: true });
+        }
       } else {
         setBootstrapping(false);
       }
@@ -607,6 +621,7 @@ function Sections({
 }) {
   const [name, setName] = useState("");
   const [cards, setCards] = useState<VocabCard[]>([]);
+  const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [showCreate, setShowCreate] = useState(sections.length === 0);
@@ -647,12 +662,14 @@ function Sections({
     if (!ok) return;
     await api.deleteCard(card.sectionId, card.id);
     setCards((current) => current.filter((item) => item.id !== card.id));
+    setExpandedCardId((current) => (current === card.id ? null : current));
     await removeCachedCard(card.id);
     await onDeleted();
   }
 
   useEffect(() => {
     setCards([]);
+    setExpandedCardId(null);
     setCursor(null);
     setHasMore(false);
     void loadCards(true);
@@ -730,20 +747,50 @@ function Sections({
               </div>
               {cards.length > 0 ? (
                 <div className="cards-list">
-                  {cards.map((card) => (
-                    <article key={card.id} className="word-row">
-                      <div className="word-with-audio">
-                        <strong>{card.word}</strong>
-                        <SpeechButton text={card.word} speech={speech} label={`播放 ${card.word}`} />
-                      </div>
-                      <span>{card.content.entries[0]?.zhDefinition}</span>
-                      <time>{formatDueDate(card.due)}</time>
-                      <span className={`status-pill ${getCardDueStatus(card).toLowerCase()}`}>{getCardDueStatus(card)}</span>
-                      <button className="icon-danger" title={`Delete ${card.word}`} onClick={() => deleteCard(card)}>
-                        <Trash2 size={17} />
-                      </button>
-                    </article>
-                  ))}
+                  {cards.map((card) => {
+                    const isExpanded = expandedCardId === card.id;
+                    return (
+                      <article
+                        key={card.id}
+                        className={`word-row ${isExpanded ? "expanded" : ""}`}
+                        role="button"
+                        tabIndex={0}
+                        aria-expanded={isExpanded}
+                        aria-label={`${isExpanded ? "收合" : "展開"} ${card.word} 詳細資訊`}
+                        onClick={() => setExpandedCardId((current) => (current === card.id ? null : card.id))}
+                        onKeyDown={(event) => {
+                          if (event.target !== event.currentTarget) return;
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setExpandedCardId((current) => (current === card.id ? null : card.id));
+                          }
+                        }}
+                      >
+                        <div className="word-row-summary">
+                          <div className="word-with-audio">
+                            <strong>{card.word}</strong>
+                            <SpeechButton text={card.word} speech={speech} label={`播放 ${card.word}`} />
+                          </div>
+                          <span>{card.content.entries[0]?.zhDefinition}</span>
+                          <time>{formatDueDate(card.due)}</time>
+                          <span className={`status-pill ${getCardDueStatus(card).toLowerCase()}`}>
+                            {getCardDueStatus(card)}
+                          </span>
+                          <button
+                            className="icon-danger"
+                            title={`Delete ${card.word}`}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void deleteCard(card);
+                            }}
+                          >
+                            <Trash2 size={17} />
+                          </button>
+                        </div>
+                        {isExpanded && <WordDetails card={card} speech={speech} />}
+                      </article>
+                    );
+                  })}
                 </div>
               ) : (
                 <EmptyState
@@ -764,6 +811,38 @@ function Sections({
         </div>
       </div>
     </section>
+  );
+}
+
+function WordDetails({ card, speech }: { card: VocabCard; speech: SpeechController }) {
+  return (
+    <div className="word-details" onClick={(event) => event.stopPropagation()}>
+      <dl className="word-meta">
+        <div>
+          <dt>下次複習</dt>
+          <dd>{formatDueDate(card.due)}</dd>
+        </div>
+        <div>
+          <dt>狀態</dt>
+          <dd>{getCardDueStatus(card)}</dd>
+        </div>
+      </dl>
+      {card.content.entries.map((entry, index) => (
+        <div key={`${entry.partOfSpeech}-${entry.zhDefinition}-${index}`} className="entry compact-entry">
+          <span className="tag">{entry.partOfSpeech}</span>
+          <p><strong>{entry.zhDefinition}</strong> · {entry.enDefinition}</p>
+          {entry.examples.map((example) => (
+            <blockquote key={example.en}>
+              <span className="example-line">
+                <span>{example.en}</span>
+                <SpeechButton text={example.en} speech={speech} label="播放例句" />
+              </span>
+              <small>{example.zh}</small>
+            </blockquote>
+          ))}
+        </div>
+      ))}
+    </div>
   );
 }
 

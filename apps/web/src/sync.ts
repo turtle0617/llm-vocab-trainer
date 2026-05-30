@@ -1,5 +1,5 @@
 import { ApiAuthError, api } from "./api";
-import { getAuthStatus, getCurrentUserUid } from "./auth";
+import { getAuthStatus, getCurrentUserUid, isUsingMockAuth } from "./auth";
 import { getPendingReviews, removePendingReview } from "./offline";
 
 export type SyncResult =
@@ -8,6 +8,7 @@ export type SyncResult =
   | { status: "partial"; synced: number; error: unknown };
 
 export async function syncPendingReviews(): Promise<SyncResult> {
+  if (isUsingMockAuth()) return { status: "skipped", synced: 0 };
   if (getAuthStatus() !== "authenticated") return { status: "skipped", synced: 0 };
   const ownerUid = getCurrentUserUid();
   if (!ownerUid) return { status: "skipped", synced: 0 };

@@ -12,7 +12,8 @@ import {
 export type AuthStatus = "loading" | "authenticated" | "anonymous" | "requiresLogin";
 type AuthListener = (status: AuthStatus) => void;
 
-const useMockAuth = import.meta.env.DEV && !import.meta.env.VITE_API_BASE_URL;
+const useMockAuth =
+  import.meta.env.DEV && (import.meta.env.VITE_FORCE_MOCK_API === "true" || !import.meta.env.VITE_API_BASE_URL);
 const listeners = new Set<AuthListener>();
 let status: AuthStatus = useMockAuth ? "authenticated" : "loading";
 let app: FirebaseApp | null = null;
@@ -76,6 +77,10 @@ export function subscribeAuthState(callback: AuthListener) {
 
 export function getAuthStatus() {
   return status;
+}
+
+export function isUsingMockAuth() {
+  return useMockAuth;
 }
 
 export function markRequiresLogin() {
