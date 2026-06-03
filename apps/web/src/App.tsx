@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   BookOpen,
   CheckCircle2,
@@ -19,6 +19,7 @@ import {
 import type { DashboardResponse, GeneratedWord, SectionSummary, VocabCard } from "@vocab/shared";
 import { ReviewRating } from "@vocab/shared";
 import { api } from "./api";
+import { createAppUpdateController, type AppUpdateController } from "./app-update";
 import {
   getAuthStatus,
   getCurrentUserUid,
@@ -28,7 +29,7 @@ import {
   subscribeAuthState,
   type AuthStatus
 } from "./auth";
-import { createBackgroundSyncScheduler, runExclusiveSync } from "./background-sync";
+import { createBackgroundSyncScheduler, createForegroundTrigger, runExclusiveSync } from "./background-sync";
 import { cacheCards, cacheSections, getCachedCards, getPendingReviewCount, queueReview, removeCachedCard } from "./offline";
 import { syncPendingReviews } from "./sync";
 import {
@@ -63,8 +64,10 @@ export function App() {
   const [syncVersion, setSyncVersion] = useState(0);
   const [error, setError] = useState<string>("");
   const [toast, setToast] = useState<ToastState | null>(null);
+  const [appUpdateAvailable, setAppUpdateAvailable] = useState(shouldShowDevUpdateBanner);
   const [reviewIntensity, setReviewIntensity] = useState<ReviewIntensityId>("standard");
   const [settingsSaving, setSettingsSaving] = useState(false);
+  const appUpdateControllerRef = useRef<AppUpdateController | null>(null);
   const syncInProgressRef = useRef(false);
   const syncLastCompletedAtRef = useRef(0);
   const foregroundSyncDebounceTimerRef = useRef<number | null>(null);
@@ -93,6 +96,10 @@ export function App() {
   function openReview(sectionId?: string) {
     if (sectionId) setSelectedSectionId(sectionId);
     setView("review");
+  }
+
+  async function applyAppUpdate() {
+    await appUpdateControllerRef.current?.applyUpdate();
   }
 
   async function loadDashboard() {
@@ -204,15 +211,34 @@ export function App() {
       sync: () => void syncAuthenticatedApp({ showLoading: false, showToast: true, fullSync: false })
     });
 
-    window.addEventListener("online", backgroundSync.schedule);
-    window.addEventListener("focus", backgroundSync.schedule);
-    document.addEventListener("visibilitychange", backgroundSync.schedule);
+    const appUpdate = createAppUpdateController({
+      onNeedRefresh: () => {
+        if (!cancelled) setAppUpdateAvailable(true);
+      }
+    });
+    appUpdateControllerRef.current = appUpdate;
+
+    function checkForAppUpdate() {
+      void appUpdate.checkForUpdate().catch(() => undefined);
+    }
+
+    const foregroundTrigger = createForegroundTrigger({
+      addDocumentListener: document.addEventListener.bind(document),
+      addWindowListener: window.addEventListener.bind(window),
+      onForeground: () => {
+        backgroundSync.schedule();
+        checkForAppUpdate();
+      },
+      removeDocumentListener: document.removeEventListener.bind(document),
+      removeWindowListener: window.removeEventListener.bind(window)
+    });
+    checkForAppUpdate();
+
     return () => {
       cancelled = true;
       unsubscribe();
-      window.removeEventListener("online", backgroundSync.schedule);
-      window.removeEventListener("focus", backgroundSync.schedule);
-      document.removeEventListener("visibilitychange", backgroundSync.schedule);
+      foregroundTrigger.dispose();
+      appUpdateControllerRef.current = null;
       backgroundSync.dispose();
       foregroundSyncDebounceTimerRef.current = null;
       if (toastTimerRef.current) {
@@ -238,6 +264,8 @@ export function App() {
     setSelectedSectionId("");
   }
 
+  const appUpdateNotice = appUpdateAvailable ? <AppUpdateNotice onUpdate={() => void applyAppUpdate()} /> : null;
+
   if (authStatus === "loading" || bootstrapping) {
     return <LoadingState title="正在載入帳號與同步資料" />;
   }
@@ -249,6 +277,7 @@ export function App() {
         pendingReviewCount={pendingReviewCount}
         requiresLogin={authStatus === "requiresLogin"}
         onLogin={handleLogin}
+        appUpdateNotice={appUpdateNotice}
       />
     );
   }
@@ -285,6 +314,7 @@ export function App() {
       <main className="main">
         {error && <Alert message={error} />}
         {toast && <Toast message={toast.message} tone={toast.tone} />}
+        {appUpdateNotice}
         {view === "dashboard" && (
           <Dashboard
             dashboard={dashboard}
@@ -438,6 +468,17 @@ function isAbortError(error: unknown) {
   return error instanceof DOMException && error.name === "AbortError";
 }
 
+function AppUpdateNotice({ onUpdate }: { onUpdate: () => void }) {
+  return (
+    <InlineNotice
+      tone="info"
+      title="有新版本可用"
+      description="更新後會重新載入 app，避免 iPhone 主畫面 PWA 繼續使用舊版本。"
+      actions={[{ label: "立即更新", onClick: onUpdate, variant: "primary" }]}
+    />
+  );
+}
+
 function readPodcastPastePreference() {
   try {
     return localStorage.getItem(PODCAST_PASTE_STORAGE_KEY) !== "false";
@@ -446,16 +487,22 @@ function readPodcastPastePreference() {
   }
 }
 
+function shouldShowDevUpdateBanner() {
+  return import.meta.env.DEV && new URLSearchParams(window.location.search).get("showUpdate") === "1";
+}
+
 function LoginView({
   error,
   pendingReviewCount,
   requiresLogin,
-  onLogin
+  onLogin,
+  appUpdateNotice
 }: {
   error: string;
   pendingReviewCount: number;
   requiresLogin: boolean;
   onLogin: (email: string, password: string) => Promise<void>;
+  appUpdateNotice?: ReactNode;
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -484,6 +531,7 @@ function LoginView({
           <h1>{requiresLogin ? "請重新登入" : "登入單字庫"}</h1>
           {requiresLogin && <p className="page-subtitle">登入狀態已過期，重新登入後會繼續同步資料。</p>}
         </div>
+        {appUpdateNotice}
         {pendingReviewCount > 0 && (
           <InlineNotice
             tone="info"
