@@ -4,6 +4,7 @@ import {
   FOREGROUND_SYNC_MAX_STALENESS_MS,
   FOREGROUND_SYNC_MIN_INTERVAL_MS,
   createBackgroundSyncScheduler,
+  createForegroundTrigger,
   runExclusiveSync
 } from "./background-sync";
 import type { AuthStatus } from "./auth";
@@ -119,6 +120,63 @@ describe("background sync scheduling", () => {
     expect(lock.current).toBe(false);
   });
 
+  it("fans out foreground events to independent sync and update callbacks", () => {
+    const syncScheduler = createTestScheduler();
+    const checkForUpdate = vi.fn();
+    const foreground = createTestForegroundTrigger(() => {
+      syncScheduler.schedule();
+      checkForUpdate();
+    });
+
+    foreground.fireWindowEvent("focus");
+    fireTimer(1);
+
+    expect(sync).toHaveBeenCalledTimes(1);
+    expect(checkForUpdate).toHaveBeenCalledTimes(1);
+
+    foreground.dispose();
+  });
+
+  it("continues update checks when sync scheduling is auth-gated", () => {
+    authStatus = "anonymous";
+    const syncScheduler = createTestScheduler();
+    const checkForUpdate = vi.fn();
+    const foreground = createTestForegroundTrigger(() => {
+      syncScheduler.schedule();
+      checkForUpdate();
+    });
+
+    foreground.fireWindowEvent("online");
+
+    expect(sync).not.toHaveBeenCalled();
+    expect(checkForUpdate).toHaveBeenCalledTimes(1);
+
+    foreground.dispose();
+  });
+
+  it("does not couple update check failures to sync scheduling", () => {
+    const syncScheduler = createTestScheduler();
+    const checkForUpdate = vi.fn(() => {
+      throw new Error("update unavailable");
+    });
+    const foreground = createTestForegroundTrigger(() => {
+      syncScheduler.schedule();
+      try {
+        checkForUpdate();
+      } catch {
+        // The app update path handles its own failures and keeps sync scheduling independent.
+      }
+    });
+
+    foreground.fireDocumentEvent("visibilitychange");
+    fireTimer(1);
+
+    expect(sync).toHaveBeenCalledTimes(1);
+    expect(checkForUpdate).toHaveBeenCalledTimes(1);
+
+    foreground.dispose();
+  });
+
   function createTestScheduler() {
     return createBackgroundSyncScheduler({
       clearTimeout: clearTimeoutMock,
@@ -138,5 +196,39 @@ describe("background sync scheduling", () => {
   function fireTimer(id: number) {
     const timer = timers.find((item) => item.id === id);
     if (timer && !timer.cleared) timer.callback();
+  }
+
+  function createTestForegroundTrigger(onForeground: () => void) {
+    const windowListeners = new Map<string, () => void>();
+    const documentListeners = new Map<string, () => void>();
+    const trigger = createForegroundTrigger({
+      addDocumentListener: vi.fn((event, callback) => {
+        documentListeners.set(event, callback as () => void);
+      }) as unknown as typeof document.addEventListener,
+      addWindowListener: vi.fn((event, callback) => {
+        windowListeners.set(event, callback as () => void);
+      }) as unknown as typeof window.addEventListener,
+      onForeground,
+      removeDocumentListener: vi.fn((event) => {
+        documentListeners.delete(event);
+      }) as unknown as typeof document.removeEventListener,
+      removeWindowListener: vi.fn((event) => {
+        windowListeners.delete(event);
+      }) as unknown as typeof window.removeEventListener
+    });
+
+    function fireWindowEvent(event: string) {
+      windowListeners.get(event)?.();
+    }
+
+    function fireDocumentEvent(event: string) {
+      documentListeners.get(event)?.();
+    }
+
+    return {
+      dispose: trigger.dispose,
+      fireWindowEvent,
+      fireDocumentEvent
+    };
   }
 });

@@ -16,6 +16,32 @@ type BackgroundSyncSchedulerOptions = {
   sync: () => void;
 };
 
+type ForegroundTriggerOptions = {
+  addWindowListener: typeof window.addEventListener;
+  addDocumentListener: typeof document.addEventListener;
+  removeWindowListener: typeof window.removeEventListener;
+  removeDocumentListener: typeof document.removeEventListener;
+  onForeground: () => void;
+};
+
+export function createForegroundTrigger(options: ForegroundTriggerOptions) {
+  function onForeground() {
+    options.onForeground();
+  }
+
+  options.addWindowListener("online", onForeground);
+  options.addWindowListener("focus", onForeground);
+  options.addDocumentListener("visibilitychange", onForeground);
+
+  return {
+    dispose() {
+      options.removeWindowListener("online", onForeground);
+      options.removeWindowListener("focus", onForeground);
+      options.removeDocumentListener("visibilitychange", onForeground);
+    }
+  };
+}
+
 export function createBackgroundSyncScheduler(options: BackgroundSyncSchedulerOptions) {
   let timer: TimerId | null = null;
 
