@@ -536,6 +536,74 @@ button.speech-button:hover:not(:disabled) {
   min-width: 0;
 }
 
+.switch-row {
+  align-items: center;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  color: var(--color-text);
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  min-height: 48px;
+  padding: 8px 12px 8px 14px;
+  width: 100%;
+}
+
+.switch-row:hover {
+  border-color: var(--color-primary-border);
+}
+
+.switch-row span {
+  font-size: 0.94rem;
+  font-weight: 800;
+  min-width: 0;
+}
+
+.switch-row input {
+  appearance: none;
+  align-self: center;
+  background: var(--color-border-strong);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 999px;
+  cursor: pointer;
+  flex: 0 0 auto;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  position: relative;
+  transition: background 160ms ease, border-color 160ms ease;
+  width: 50px;
+}
+
+.switch-row input::after {
+  background: var(--color-surface);
+  border-radius: 50%;
+  box-shadow: 0 1px 4px rgba(22, 32, 51, 0.22);
+  content: "";
+  height: 22px;
+  left: 3px;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  transition: transform 160ms ease;
+  width: 22px;
+}
+
+.switch-row input:checked {
+  background: var(--color-primary-solid);
+  border-color: var(--color-primary-solid);
+}
+
+.switch-row input:checked::after {
+  transform: translate(22px, -50%);
+}
+
+.switch-row input:focus-visible {
+  outline: 3px solid var(--color-primary-border);
+  outline-offset: 3px;
+}
+
 .section-side {
   align-self: start;
 }

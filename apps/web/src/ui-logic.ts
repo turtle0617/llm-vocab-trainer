@@ -96,3 +96,36 @@ export function formatScheduledFeedback(nextDue: string, reviewedAt = new Date()
   if (diffDays === 1) return "已排到明天";
   return `已排到 ${diffDays} 天後`;
 }
+
+export function cleanPodcastPaste(input: string) {
+  const lines = input
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const contentLines: string[] = [];
+  for (const line of lines) {
+    if (isPodcastMetadataLine(line)) break;
+    contentLines.push(line);
+  }
+
+  const content = contentLines.length > 0 ? contentLines.join(" ") : input.trim();
+  return stripWrappingQuotes(
+    content
+      .replace(/\s+來自\S+.*$/s, "")
+      .replace(/\s+https?:\/\/\S+.*$/s, "")
+      .replace(/\s*此內容可能受到著作權.*$/s, "")
+      .trim()
+  );
+}
+
+function isPodcastMetadataLine(line: string) {
+  return line.startsWith("來自") || /^https?:\/\//.test(line) || line.includes("著作權");
+}
+
+function stripWrappingQuotes(value: string) {
+  return value
+    .replace(/^[“”"']+/, "")
+    .replace(/[“”"']+$/, "")
+    .trim();
+}

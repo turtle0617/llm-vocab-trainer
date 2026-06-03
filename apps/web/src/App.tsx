@@ -32,6 +32,7 @@ import { createBackgroundSyncScheduler, runExclusiveSync } from "./background-sy
 import { cacheCards, cacheSections, getCachedCards, getPendingReviewCount, queueReview, removeCachedCard } from "./offline";
 import { syncPendingReviews } from "./sync";
 import {
+  cleanPodcastPaste,
   formatScheduledFeedback,
   getCardDueStatus,
   getDashboardAction,
@@ -48,6 +49,7 @@ type SpeechController = {
   playingText: string | null;
   speak: (text: string) => Promise<void>;
 };
+const PODCAST_PASTE_STORAGE_KEY = "vocab-pwa-from-podcast";
 
 export function App() {
   const [authStatus, setAuthStatus] = useState<AuthStatus>("loading");
@@ -434,6 +436,14 @@ function useSpeechPlayer(onError: (message: string) => void): SpeechController {
 
 function isAbortError(error: unknown) {
   return error instanceof DOMException && error.name === "AbortError";
+}
+
+function readPodcastPastePreference() {
+  try {
+    return localStorage.getItem(PODCAST_PASTE_STORAGE_KEY) !== "false";
+  } catch {
+    return true;
+  }
 }
 
 function LoginView({
@@ -864,12 +874,19 @@ function AddWord({
   speech: SpeechController;
 }) {
   const [word, setWord] = useState("");
+  const [fromPodcast, setFromPodcast] = useState(readPodcastPastePreference);
   const [generated, setGenerated] = useState<GeneratedWord | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const selectedSection = sections.find((section) => section.id === selectedSectionId);
   const canSubmit = Boolean(selectedSectionId && word.trim());
+
+  function updateFromPodcast(enabled: boolean) {
+    setFromPodcast(enabled);
+    localStorage.setItem(PODCAST_PASTE_STORAGE_KEY, String(enabled));
+    if (enabled) setWord((current) => cleanPodcastPaste(current));
+  }
 
   async function generate() {
     if (!canSubmit || loading) return;
@@ -932,10 +949,24 @@ function AddWord({
             <option key={section.id} value={section.id}>{section.name}</option>
           ))}
         </select>
+        <label className="switch-row">
+          <span>來自 podcast</span>
+          <input
+            type="checkbox"
+            role="switch"
+            checked={fromPodcast}
+            onChange={(event) => updateFromPodcast(event.target.checked)}
+          />
+        </label>
         <div className="inline-form">
           <input
             value={word}
             onChange={(event) => setWord(event.target.value)}
+            onPaste={(event) => {
+              if (!fromPodcast) return;
+              event.preventDefault();
+              setWord(cleanPodcastPaste(event.clipboardData.getData("text")));
+            }}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !generated) void generate();
             }}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { DashboardResponse, VocabCard } from "@vocab/shared";
 import {
+  cleanPodcastPaste,
   formatScheduledFeedback,
   getCardDueStatus,
   getDashboardAction,
@@ -56,5 +57,19 @@ describe("ui logic", () => {
     expect(getCardDueStatus({ ...base, due: "2026-05-09T00:00:00.000Z", state: "review" }, now)).toBe("Due");
     expect(getCardDueStatus({ ...base, due: "2026-05-12T00:00:00.000Z", state: "review" }, now)).toBe("Review");
     expect(formatScheduledFeedback("2026-05-13T00:00:00.000Z", now)).toBe("已排到 3 天後");
+  });
+
+  it("cleans Apple Podcasts paste metadata", () => {
+    expect(
+      cleanPodcastPaste(`“Damn, dude. I can't. I'm like clutching on to every ounce of youth that I have until August.”
+
+來自Eat Your Crust：Turning 30，2026年5月6日
+https://podcasts.apple.com/tw/podcast/eat-your-crust/id1463004931?i=1000766424826&r=162
+此內容可能受到著作權的保護。`)
+    ).toBe("Damn, dude. I can't. I'm like clutching on to every ounce of youth that I have until August.");
+
+    expect(cleanPodcastPaste("Keep this sentence. 來自Some Podcast：Episode https://podcasts.apple.com/tw/example")).toBe(
+      "Keep this sentence."
+    );
   });
 });
