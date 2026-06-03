@@ -9,27 +9,27 @@ export type DashboardAction =
 export const reviewIntensityPresets = [
   {
     id: "relaxed",
-    label: "輕鬆",
+    label: "Relaxed",
     retention: desiredRetentionByIntensity.relaxed,
-    description: "每天複習較少，適合長期維持。"
+    description: "Lower daily load for long-term maintenance."
   },
   {
     id: "standard",
-    label: "標準",
+    label: "Standard",
     retention: desiredRetentionByIntensity.standard,
-    description: "平衡記憶保持率與每日負擔。"
+    description: "Balances retention and daily review effort."
   },
   {
     id: "solid",
-    label: "扎實",
+    label: "Solid",
     retention: desiredRetentionByIntensity.solid,
-    description: "複習更密集，適合重要內容。"
+    description: "More frequent review for important material."
   },
   {
     id: "exam",
-    label: "考試",
+    label: "Exam",
     retention: desiredRetentionByIntensity.exam,
-    description: "提高保持率，短期壓力也最高。"
+    description: "Higher retention target with the heaviest short-term load."
   }
 ] as const satisfies ReadonlyArray<{
   id: ReviewIntensity;
@@ -39,28 +39,29 @@ export const reviewIntensityPresets = [
 }>;
 
 export type ReviewIntensityId = ReviewIntensity;
+export type StatTone = "danger" | "warning" | "success" | "info";
 
 export function getDashboardAction(dashboard: DashboardResponse): DashboardAction {
   if (dashboard.totals.dueToday > 0) {
     return {
       kind: "review",
-      label: "開始複習",
-      description: `今天有 ${dashboard.totals.dueToday} 張卡片到期。`
+      label: "Start review",
+      description: `${dashboard.totals.dueToday} ${pluralize(dashboard.totals.dueToday, "card")} ${dashboard.totals.dueToday === 1 ? "is" : "are"} due today.`
     };
   }
 
   if (dashboard.totals.totalCards === 0) {
     return {
       kind: "add",
-      label: "新增第一個單字",
-      description: "先建立學習材料，之後 FSRS 會安排複習。"
+      label: "Add your first word",
+      description: "Create learning material first, then FSRS will schedule reviews."
     };
   }
 
   return {
     kind: "done",
-    label: "新增單字",
-    description: "今天到期的卡片已完成。"
+    label: "Add word",
+    description: "All due cards are done for today."
   };
 }
 
@@ -72,6 +73,35 @@ export function getCardDueStatus(card: VocabCard, now = new Date()) {
 
 export function getPrimarySection(sections: SectionSummary[]) {
   return sections.find((section) => section.dueToday > 0) ?? sections[0];
+}
+
+export function getDeckPrioritySections(sections: SectionSummary[]) {
+  return [...sections].sort((a, b) => {
+    const dueDelta = b.dueToday - a.dueToday;
+    if (dueDelta !== 0) return dueDelta;
+
+    const reviewedDelta = b.reviewedToday - a.reviewedToday;
+    if (reviewedDelta !== 0) return reviewedDelta;
+
+    return b.totalCards - a.totalCards;
+  });
+}
+
+export function getStatTone(label: "dueToday" | "reviewedToday" | "streakDays" | "totalCards"): StatTone {
+  if (label === "dueToday") return "danger";
+  if (label === "reviewedToday") return "success";
+  if (label === "streakDays") return "warning";
+  return "info";
+}
+
+export function getCompactActionCopy(dashboard: DashboardResponse) {
+  const action = getDashboardAction(dashboard);
+  if (action.kind === "review") {
+    return `Review ${dashboard.totals.dueToday} due ${pluralize(dashboard.totals.dueToday, "card")}`;
+  }
+  if (action.kind === "add" && dashboard.sections.length === 0) return "Create a deck to start";
+  if (action.kind === "add") return "Generate your next card";
+  return "Add another word";
 }
 
 export function getTrendScale(values: number[]) {
@@ -92,9 +122,9 @@ export function formatScheduledFeedback(nextDue: string, reviewedAt = new Date()
   const diffMs = due.getTime() - reviewedAt.getTime();
   const diffDays = Math.max(0, Math.round(diffMs / 86_400_000));
 
-  if (diffDays === 0) return "已排到今天稍後再複習";
-  if (diffDays === 1) return "已排到明天";
-  return `已排到 ${diffDays} 天後`;
+  if (diffDays === 0) return "Scheduled for later today";
+  if (diffDays === 1) return "Scheduled for tomorrow";
+  return `Scheduled in ${diffDays} days`;
 }
 
 export function cleanPodcastPaste(input: string) {
@@ -128,4 +158,8 @@ function stripWrappingQuotes(value: string) {
     .replace(/^[“”"']+/, "")
     .replace(/[“”"']+$/, "")
     .trim();
+}
+
+function pluralize(count: number, noun: string) {
+  return count === 1 ? noun : `${noun}s`;
 }

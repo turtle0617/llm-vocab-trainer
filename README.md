@@ -10,9 +10,9 @@ Production deployments should use Firebase App Check, Firebase Auth, budget aler
 
 ## Screenshots
 
-![vocab-pwa product demo](docs/assets/demo.png)
+![vocab-pwa generated design target mockup](docs/assets/demo.png)
 
-The demo image is a generated product mockup for the README. It illustrates the dashboard, AI-assisted word creation, and FSRS review flow without exposing production data.
+The demo image is a generated design target mockup for the README, not a live application screenshot. It illustrates the intended dashboard, AI-assisted word creation, and FSRS review flow without exposing production data. Pull requests that materially change the UI should include GitHub-hosted screenshots in the PR description rather than committing review screenshots to the repository.
 
 ## Quick Start
 

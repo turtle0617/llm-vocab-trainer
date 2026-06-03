@@ -13,7 +13,9 @@ export type AuthStatus = "loading" | "authenticated" | "anonymous" | "requiresLo
 type AuthListener = (status: AuthStatus) => void;
 
 const useMockAuth =
-  import.meta.env.DEV && (import.meta.env.VITE_FORCE_MOCK_API === "true" || !import.meta.env.VITE_API_BASE_URL);
+  import.meta.env.DEV &&
+  ((import.meta.env.MODE !== "test" && import.meta.env.VITE_FORCE_MOCK_API === "true") ||
+    !import.meta.env.VITE_API_BASE_URL);
 const listeners = new Set<AuthListener>();
 let status: AuthStatus = useMockAuth ? "authenticated" : "loading";
 let app: FirebaseApp | null = null;

@@ -36,8 +36,11 @@ import {
   cleanPodcastPaste,
   formatScheduledFeedback,
   getCardDueStatus,
+  getCompactActionCopy,
   getDashboardAction,
+  getDeckPrioritySections,
   getPrimarySection,
+  getStatTone,
   getTrendScale,
   reviewIntensityPresets,
   type ReviewIntensityId
@@ -133,7 +136,7 @@ export function App() {
     try {
       const settings = await api.updateSettings({ reviewIntensity: nextIntensity });
       setReviewIntensity(settings.reviewIntensity);
-      notify(`複習強度已更新為 ${Math.round(settings.desiredRetention * 100)}%`);
+      notify(`Review intensity updated to ${Math.round(settings.desiredRetention * 100)}%`);
     } catch (err) {
       notify(formatAppError(err), "warning");
     } finally {
@@ -151,11 +154,11 @@ export function App() {
     async function syncAuthenticatedApp(options: { showLoading: boolean; showToast: boolean; fullSync: boolean }) {
       await runExclusiveSync(syncInProgressRef, async () => {
         if (options.showLoading) setBootstrapping(true);
-        if (options.showToast) notify("正在同步資料...", "info");
+        if (options.showToast) notify("Syncing data...", "info");
         try {
           const syncResult = await syncPendingReviews();
           if (!cancelled && syncResult.status === "partial") {
-            notify("部分離線複習尚未同步，登入或連線後會繼續同步。", "warning");
+            notify("Some offline reviews are still pending. They will sync after sign-in or reconnecting.", "warning");
           }
           if (!cancelled) {
             if (options.fullSync || syncLastCompletedAtRef.current === 0) {
@@ -171,7 +174,7 @@ export function App() {
             await refreshPendingCount();
             if (syncResult.status === "complete") {
               setSyncVersion((value) => value + 1);
-              if (options.showToast) notify("同步完成");
+              if (options.showToast) notify("Sync complete");
             }
           }
         } finally {
@@ -267,7 +270,7 @@ export function App() {
   const appUpdateNotice = appUpdateAvailable ? <AppUpdateNotice onUpdate={() => void applyAppUpdate()} /> : null;
 
   if (authStatus === "loading" || bootstrapping) {
-    return <LoadingState title="正在載入帳號與同步資料" />;
+    return <LoadingState title="Loading account and syncing data" />;
   }
 
   if (authStatus === "anonymous" || authStatus === "requiresLogin") {
@@ -291,22 +294,22 @@ export function App() {
         </div>
         <nav className="nav">
           <button className={view === "dashboard" ? "active" : ""} onClick={() => setView("dashboard")}>
-            <Layers size={18} /> 首頁
-          </button>
-          <button className={view === "sections" ? "active" : ""} onClick={() => setView("sections")}>
-            <BookOpen size={18} /> 單字庫
-          </button>
-          <button className={view === "add" ? "active" : ""} onClick={() => openAdd(selectedSection?.id)}>
-            <Plus size={18} /> 新增單字
+            <Layers size={18} /> Dashboard
           </button>
           <button className={view === "review" ? "active" : ""} onClick={() => openReview(selectedSection?.id)}>
-            <RotateCcw size={18} /> 複習
+            <RotateCcw size={18} /> Review
+          </button>
+          <button className={view === "add" ? "active" : ""} onClick={() => openAdd(selectedSection?.id)}>
+            <Plus size={18} /> Add Word
+          </button>
+          <button className={view === "sections" ? "active" : ""} onClick={() => setView("sections")}>
+            <BookOpen size={18} /> Decks
           </button>
           <button className={view === "settings" ? "active" : ""} onClick={() => setView("settings")}>
-            <Settings size={18} /> 設定
+            <Settings size={18} /> Settings
           </button>
           <button onClick={handleLogout}>
-            <LogOut size={18} /> 登出
+            <LogOut size={18} /> Sign Out
           </button>
         </nav>
       </aside>
@@ -334,7 +337,7 @@ export function App() {
             onCreated={async (section) => {
               setSections((current) => [section, ...current]);
               setSelectedSectionId(section.id);
-              notify(`已建立「${section.name}」`);
+              notify(`Created "${section.name}"`);
               await loadDashboard();
             }}
             onSelect={setSelectedSectionId}
@@ -413,7 +416,7 @@ function useSpeechPlayer(onError: (message: string) => void): SpeechController {
     const normalized = text.trim();
     if (!normalized || playingText === normalized) return;
     if (normalized.length > 200) {
-      onError("Groq Orpheus 單次最多支援 200 個字元。");
+      onError("Groq Orpheus supports up to 200 characters per request.");
       return;
     }
 
@@ -444,7 +447,7 @@ function useSpeechPlayer(onError: (message: string) => void): SpeechController {
         if (urlRef.current) URL.revokeObjectURL(urlRef.current);
         urlRef.current = null;
         audioRef.current = null;
-        onError("語音播放失敗，請稍後再試。");
+        onError("Speech playback failed. Please try again later.");
       });
       await audio.play();
     } catch (err) {
@@ -472,9 +475,9 @@ function AppUpdateNotice({ onUpdate }: { onUpdate: () => void }) {
   return (
     <InlineNotice
       tone="info"
-      title="有新版本可用"
-      description="更新後會重新載入 app，避免 iPhone 主畫面 PWA 繼續使用舊版本。"
-      actions={[{ label: "立即更新", onClick: onUpdate, variant: "primary" }]}
+      title="A new version is available"
+      description="Update to reload the app and avoid using an older installed PWA shell."
+      actions={[{ label: "Update now", onClick: onUpdate, variant: "primary" }]}
     />
   );
 }
@@ -527,19 +530,23 @@ function LoginView({
           <span>vocab-pwa</span>
         </div>
         <div>
-          <p className="eyebrow">登入</p>
-          <h1>{requiresLogin ? "請重新登入" : "登入單字庫"}</h1>
-          {requiresLogin && <p className="page-subtitle">登入狀態已過期，重新登入後會繼續同步資料。</p>}
+          <p className="eyebrow">AI vocabulary review</p>
+          <h1>{requiresLogin ? "Sign in again" : "Sign in to vocab-pwa"}</h1>
+          <p className="page-subtitle">
+            {requiresLogin
+              ? "Your session expired. Sign in again to continue syncing."
+              : "Generate bilingual cards, review with FSRS scheduling, and keep progress synced offline-first."}
+          </p>
         </div>
         {appUpdateNotice}
         {pendingReviewCount > 0 && (
           <InlineNotice
             tone="info"
-            title={`有 ${pendingReviewCount} 筆離線複習待同步`}
-            description="登入後會先同步離線複習，再載入首頁進度。"
+            title={`${pendingReviewCount} offline reviews are waiting to sync`}
+            description="After sign-in, offline reviews will sync before dashboard progress loads."
           />
         )}
-        {error && <InlineNotice tone="error" title="登入失敗" description={error} />}
+        {error && <InlineNotice tone="error" title="Sign-in failed" description={error} />}
         <label htmlFor="login-email">Email</label>
         <input
           id="login-email"
@@ -558,7 +565,7 @@ function LoginView({
         />
         <button className="primary-action" disabled={!email.trim() || !password || submitting}>
           {submitting ? <LoaderCircle className="spin" size={18} /> : null}
-          登入
+          Sign In
         </button>
       </form>
     </main>
@@ -578,10 +585,12 @@ function Dashboard({
   onAdd: (id?: string) => void;
   onCreateSection: () => void;
 }) {
-  if (!dashboard) return <LoadingState title="正在載入今日進度" />;
+  if (!dashboard) return <LoadingState title="Loading today's progress" />;
 
   const action = getDashboardAction(dashboard);
+  const compactAction = getCompactActionCopy(dashboard);
   const primarySection = getPrimarySection(dashboard.sections);
+  const prioritySections = getDeckPrioritySections(dashboard.sections);
   const trendScale = getTrendScale(dashboard.reviewTrend.map((day) => day.count));
   const primaryAction =
     action.kind === "review"
@@ -591,11 +600,11 @@ function Dashboard({
         : onCreateSection;
 
   return (
-    <section className="page">
-      <header className="page-header action-header">
+    <section className="page cockpit-page">
+      <header className="page-header action-header cockpit-header">
         <div>
-          <p className="eyebrow">首頁</p>
-          <h1>今日複習</h1>
+          <p className="eyebrow">AI-powered FSRS workspace</p>
+          <h1>Dashboard</h1>
           <p className="page-subtitle">{action.description}</p>
         </div>
         <button
@@ -608,52 +617,115 @@ function Dashboard({
           }
           onClick={primaryAction}
         >
-          {action.kind === "review" ? <RotateCcw size={18} /> : <Plus size={18} />}
-          {action.label}
+          {action.kind === "review" ? <RotateCcw size={18} /> : <Sparkles size={18} />}
+          {compactAction}
         </button>
       </header>
-      <div className="stats-grid">
-        <Stat label="今日到期" value={dashboard.totals.dueToday} />
-        <Stat label="今日已複習" value={dashboard.totals.reviewedToday} />
-        <Stat label="連續天數" value={dashboard.totals.streakDays} />
-        <Stat label="總單字" value={dashboard.totals.totalCards} />
-      </div>
-      <div className="trend" aria-label="最近七天複習張數">
-        <div className="trend-axis" aria-hidden="true">
-          <span>{trendScale.max}</span>
-          <span>{trendScale.middle}</span>
-          <span>0</span>
-        </div>
-        <div className="trend-bars">
-          <div className="trend-grid" aria-hidden="true">
-            <span />
-            <span />
-            <span />
+
+      <div className="cockpit-grid">
+        <section className="panel stack cockpit-summary">
+          <div>
+            <p className="eyebrow">Due for review</p>
+            <h2>Today</h2>
           </div>
-          {dashboard.reviewTrend.map((day) => (
-            <div key={day.date} className="bar-wrap">
-              <div className="bar-slot">
-                <div
-                  className={`bar ${day.count === 0 ? "empty-bar" : ""}`}
-                  style={{ height: `${day.count === 0 ? 2 : Math.max(10, (day.count / trendScale.max) * 96)}px` }}
-                  title={`${day.date.slice(5)}：${day.count} 張`}
-                />
-              </div>
-              <span>{day.date.slice(5)}</span>
+          <div className="stats-grid">
+            <Stat label="Due" value={dashboard.totals.dueToday} tone={getStatTone("dueToday")} />
+            <Stat label="Reviewed" value={dashboard.totals.reviewedToday} tone={getStatTone("reviewedToday")} />
+            <Stat label="Streak" value={dashboard.totals.streakDays} tone={getStatTone("streakDays")} />
+            <Stat label="Words" value={dashboard.totals.totalCards} tone={getStatTone("totalCards")} />
+          </div>
+          <div className="trend compact-trend" aria-label="Review count for the last seven days">
+            <div className="trend-axis" aria-hidden="true">
+              <span>{trendScale.max}</span>
+              <span>{trendScale.middle}</span>
+              <span>0</span>
             </div>
-          ))}
-        </div>
-        <span className="trend-unit">張</span>
+            <div className="trend-bars">
+              <div className="trend-grid" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </div>
+              {dashboard.reviewTrend.map((day) => (
+                <div key={day.date} className="bar-wrap">
+                  <div className="bar-slot">
+                    <div
+                      className={`bar ${day.count === 0 ? "empty-bar" : ""}`}
+                      style={{ height: `${day.count === 0 ? 2 : Math.max(10, (day.count / trendScale.max) * 96)}px` }}
+                      title={`${day.date.slice(5)}: ${day.count} cards`}
+                    />
+                  </div>
+                  <span>{day.date.slice(5)}</span>
+                </div>
+              ))}
+            </div>
+            <span className="trend-unit">cards</span>
+          </div>
+        </section>
+
+        <section className="panel stack cockpit-decks">
+          <div className="detail-header">
+            <div>
+              <p className="eyebrow">Deck priority</p>
+              <h2>Decks</h2>
+            </div>
+            <button className="secondary-action compact-button" onClick={onCreateSection}>
+              <Plus size={16} />
+              New Deck
+            </button>
+          </div>
+          {prioritySections.length > 0 ? (
+            <SectionList sections={prioritySections} onOpen={onOpenSection} onReview={onReview} onAdd={onAdd} compact />
+          ) : (
+            <EmptyState
+              title="No decks yet"
+              description="Create a deck first, then add words you want to remember long-term."
+              primaryAction={{ label: "Create Deck", onClick: onCreateSection }}
+            />
+          )}
+        </section>
+
+        <section className="panel stack cockpit-actions">
+          <div>
+            <p className="eyebrow">Next action</p>
+            <h2>{action.label}</h2>
+            <p>{action.description}</p>
+          </div>
+          <button
+            className={
+              action.kind === "review"
+                ? "review-action action-tile"
+                : action.kind === "add"
+                  ? "add-action action-tile"
+                  : "secondary-action action-tile"
+            }
+            onClick={primaryAction}
+          >
+            {action.kind === "review" ? <RotateCcw size={20} /> : <Sparkles size={20} />}
+            <span>{compactAction}</span>
+          </button>
+          <div className="quick-actions">
+            <button className="secondary-action" onClick={() => onAdd(primarySection?.id)}>
+              <Plus size={17} />
+              Add Word
+            </button>
+            <button className={primarySection?.dueToday ? "review-action" : "secondary-action"} onClick={() => onReview(primarySection?.id)}>
+              <RotateCcw size={17} />
+              Review
+            </button>
+          </div>
+          {primarySection && (
+            <div className="focus-deck">
+              <span>Focus deck</span>
+              <strong>{primarySection.name}</strong>
+              <small>
+                {primarySection.dueToday} due · {primarySection.totalCards}{" "}
+                {primarySection.totalCards === 1 ? "word" : "words"}
+              </small>
+            </div>
+          )}
+        </section>
       </div>
-      {dashboard.sections.length > 0 ? (
-        <SectionList sections={dashboard.sections} onOpen={onOpenSection} onReview={onReview} onAdd={onAdd} />
-      ) : (
-        <EmptyState
-          title="還沒有牌組"
-          description="先建立一個牌組，再加入要長期記住的單字。"
-          primaryAction={{ label: "建立牌組", onClick: onCreateSection }}
-        />
-      )}
     </section>
   );
 }
@@ -708,7 +780,9 @@ function Sections({
 
   async function deleteSelectedSection() {
     if (!selected) return;
-    const ok = window.confirm(`此牌組與其中 ${selected.totalCards} 張單字卡會被封存，之後不會出現在複習。`);
+    const ok = window.confirm(
+      `This deck and its ${selected.totalCards} cards will be archived and removed from future reviews.`
+    );
     if (!ok) return;
     await api.deleteSection(selected.id);
     setCards([]);
@@ -737,19 +811,20 @@ function Sections({
     <section className="page">
       <header className="page-header action-header">
         <div>
-          <p className="eyebrow">單字庫</p>
-          <h1>牌組與單字</h1>
+          <p className="eyebrow">Deck library</p>
+          <h1>Decks</h1>
+          <p className="page-subtitle">Manage decks, inspect generated cards, and jump into review.</p>
         </div>
         <button className="secondary-action" onClick={() => setShowCreate((value) => !value)}>
           <Plus size={18} />
-          New Section
+          New Deck
         </button>
       </header>
       <div className="split">
         <div className="panel section-side">
           {showCreate && (
             <div className="create-section">
-              <label htmlFor="section-name">牌組名稱</label>
+              <label htmlFor="section-name">Deck name</label>
               <div className="inline-form">
                 <input
                   id="section-name"
@@ -758,7 +833,7 @@ function Sections({
                   onKeyDown={(event) => {
                     if (event.key === "Enter") void createSection();
                   }}
-                  placeholder="例如：商務英文"
+                  placeholder="Business English"
                 />
                 <button disabled={!name.trim()} onClick={createSection}>
                   <Plus size={18} />
@@ -774,7 +849,7 @@ function Sections({
                 onClick={() => onSelect(section.id)}
               >
                 <span>{section.name}</span>
-                <small>{section.dueToday > 0 ? `${section.dueToday} due` : "done"}</small>
+                <small>{section.dueToday > 0 ? `${section.dueToday} due` : "Done"}</small>
                 <ChevronRight size={16} />
               </button>
             ))}
@@ -786,7 +861,9 @@ function Sections({
               <div className="detail-header">
                 <div>
                   <h2>{selected.name}</h2>
-                  <p>{selected.totalCards} words · {selected.dueToday} due today</p>
+                  <p>
+                    {selected.totalCards} {selected.totalCards === 1 ? "word" : "words"} · {selected.dueToday} due today
+                  </p>
                 </div>
                 <div className="actions section-actions">
                   <button className="add-action" onClick={onAdd}>
@@ -814,7 +891,7 @@ function Sections({
                         role="button"
                         tabIndex={0}
                         aria-expanded={isExpanded}
-                        aria-label={`${isExpanded ? "收合" : "展開"} ${card.word} 詳細資訊`}
+                        aria-label={`${isExpanded ? "Collapse" : "Expand"} details for ${card.word}`}
                         onClick={() => setExpandedCardId((current) => (current === card.id ? null : card.id))}
                         onKeyDown={(event) => {
                           if (event.target !== event.currentTarget) return;
@@ -827,7 +904,7 @@ function Sections({
                         <div className="word-row-summary">
                           <div className="word-with-audio">
                             <strong>{card.word}</strong>
-                            <SpeechButton text={card.word} speech={speech} label={`播放 ${card.word}`} />
+                            <SpeechButton text={card.word} speech={speech} label={`Play ${card.word}`} />
                           </div>
                           <span>{card.content.entries[0]?.zhDefinition}</span>
                           <time>{formatDueDate(card.due)}</time>
@@ -852,18 +929,18 @@ function Sections({
                 </div>
               ) : (
                 <EmptyState
-                  title="這個牌組還沒有單字"
-                  description="加入第一個單字後，它會立刻出現在今日複習。"
-                  primaryAction={{ label: "新增單字", onClick: onAdd }}
+                  title="This deck has no words yet"
+                  description="After you add the first word, it will appear in today's review."
+                  primaryAction={{ label: "Add Word", onClick: onAdd }}
                 />
               )}
-              {hasMore && <button className="load-more" onClick={() => loadCards(false)}>載入更多</button>}
+              {hasMore && <button className="load-more" onClick={() => loadCards(false)}>Load More</button>}
             </>
           ) : (
             <EmptyState
-              title="先建立一個牌組"
-              description="牌組用來區分不同主題或難度的單字。"
-              primaryAction={{ label: "New Section", onClick: () => setShowCreate(true) }}
+              title="Create a deck first"
+              description="Decks keep words organized by topic, purpose, or difficulty."
+              primaryAction={{ label: "New Deck", onClick: () => setShowCreate(true) }}
             />
           )}
         </div>
@@ -877,11 +954,11 @@ function WordDetails({ card, speech }: { card: VocabCard; speech: SpeechControll
     <div className="word-details" onClick={(event) => event.stopPropagation()}>
       <dl className="word-meta">
         <div>
-          <dt>下次複習</dt>
+          <dt>Next review</dt>
           <dd>{formatDueDate(card.due)}</dd>
         </div>
         <div>
-          <dt>狀態</dt>
+          <dt>Status</dt>
           <dd>{getCardDueStatus(card)}</dd>
         </div>
       </dl>
@@ -893,7 +970,7 @@ function WordDetails({ card, speech }: { card: VocabCard; speech: SpeechControll
             <blockquote key={example.en}>
               <span className="example-line">
                 <span>{example.en}</span>
-                <SpeechButton text={example.en} speech={speech} label="播放例句" />
+                <SpeechButton text={example.en} speech={speech} label="Play example" />
               </span>
               <small>{example.zh}</small>
             </blockquote>
@@ -954,7 +1031,7 @@ function AddWord({
   async function addCard() {
     if (!generated || !selectedSectionId) return;
     await api.createCard({ sectionId: selectedSectionId, content: generated });
-    setSuccess(`已加入「${selectedSection?.name ?? "目前牌組"}」`);
+    setSuccess(`Added to "${selectedSection?.name ?? "current deck"}"`);
     setWord("");
     setGenerated(null);
     await onAdded();
@@ -964,20 +1041,21 @@ function AddWord({
     return (
       <section className="page narrow">
         <EmptyState
-          title="先建立一個牌組"
-          description="新增單字前，需要先有一個存放內容的牌組。"
-          primaryAction={{ label: "建立牌組", onClick: onCreateSection }}
+          title="Create a deck first"
+          description="You need a deck before adding generated word cards."
+          primaryAction={{ label: "Create Deck", onClick: onCreateSection }}
         />
       </section>
     );
   }
 
   return (
-    <section className="page narrow">
+    <section className="page add-word-page">
       <header className="page-header">
         <div>
-          <p className="eyebrow">新增單字</p>
-          <h1>產生學習卡片</h1>
+          <p className="eyebrow">AI generated</p>
+          <h1>Add Word</h1>
+          <p className="page-subtitle">Generate bilingual definitions and examples, then save the card into a deck.</p>
         </div>
       </header>
       {success && (
@@ -985,58 +1063,69 @@ function AddWord({
           tone="success"
           title={success}
           actions={[
-            { label: "繼續新增", onClick: () => setSuccess("") },
-            { label: "開始複習", onClick: () => onReview(selectedSectionId), variant: "review" }
+            { label: "Add another", onClick: () => setSuccess("") },
+            { label: "Start review", onClick: () => onReview(selectedSectionId), variant: "review" }
           ]}
         />
       )}
-      <div className="panel stack">
-        <select value={selectedSectionId} onChange={(event) => onSectionChange(event.target.value)}>
-          <option value="">選擇牌組</option>
-          {sections.map((section) => (
-            <option key={section.id} value={section.id}>{section.name}</option>
-          ))}
-        </select>
-        <label className="switch-row">
-          <span>來自 podcast</span>
-          <input
-            type="checkbox"
-            role="switch"
-            checked={fromPodcast}
-            onChange={(event) => updateFromPodcast(event.target.checked)}
-          />
-        </label>
-        <div className="inline-form">
-          <input
-            value={word}
-            onChange={(event) => setWord(event.target.value)}
-            onPaste={(event) => {
-              if (!fromPodcast) return;
-              event.preventDefault();
-              setWord(cleanPodcastPaste(event.clipboardData.getData("text")));
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !generated) void generate();
-            }}
-            placeholder="English word or phrase"
-          />
-          <button disabled={!canSubmit || loading} onClick={generate}>
-            {loading ? <LoaderCircle className="spin" size={18} /> : <Sparkles size={18} />}
-            {loading ? "產生中" : "Generate"}
-          </button>
+      <div className="add-workbench">
+        <div className="panel stack generator-panel">
+          <div className="generator-topline">
+            <label htmlFor="add-word-section">Deck</label>
+            <label className="switch-row compact-switch">
+              <span>Podcast paste cleanup</span>
+              <input
+                type="checkbox"
+                role="switch"
+                checked={fromPodcast}
+                onChange={(event) => updateFromPodcast(event.target.checked)}
+              />
+            </label>
+          </div>
+          <select id="add-word-section" value={selectedSectionId} onChange={(event) => onSectionChange(event.target.value)}>
+            <option value="">Choose a deck</option>
+            {sections.map((section) => (
+              <option key={section.id} value={section.id}>{section.name}</option>
+            ))}
+          </select>
+          <div className="inline-form generator-form">
+            <input
+              value={word}
+              onChange={(event) => setWord(event.target.value)}
+              onPaste={(event) => {
+                if (!fromPodcast) return;
+                event.preventDefault();
+                setWord(cleanPodcastPaste(event.clipboardData.getData("text")));
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !generated) void generate();
+              }}
+              placeholder="English word or phrase"
+            />
+            <button disabled={!canSubmit || loading} onClick={generate}>
+              {loading ? <LoaderCircle className="spin" size={18} /> : <Sparkles size={18} />}
+              {loading ? "Generating" : "Generate"}
+            </button>
+          </div>
+          {error && (
+            <InlineNotice
+              tone="error"
+              title="Generation failed"
+              description={error}
+              actions={[{ label: "Retry", onClick: generate, variant: "primary" }]}
+            />
+          )}
         </div>
-        {error && (
-          <InlineNotice
-            tone="error"
-            title="產生失敗"
-            description={error}
-            actions={[{ label: "重試", onClick: generate, variant: "primary" }]}
-          />
+        {generated ? (
+          <GeneratedWordCard generated={generated} onAdd={addCard} speech={speech} />
+        ) : (
+          <div className="panel generated-placeholder">
+            <Sparkles size={22} />
+            <h2>AI card preview</h2>
+            <p>Generated definitions and bilingual examples will appear here before you add them to the deck.</p>
+          </div>
         )}
       </div>
-      {generated && (
-        <GeneratedWordCard generated={generated} onAdd={addCard} speech={speech} />
-      )}
     </section>
   );
 }
@@ -1104,7 +1193,7 @@ function Review({
     } catch {
       await queueReview(review, getCurrentUserUid());
       await removeCachedCard(current.id);
-      notify("已離線暫存，登入或連線後同步", "warning");
+      notify("Saved offline. It will sync after sign-in or reconnecting.", "warning");
     }
     setQueue((existing) => existing.slice(1));
     setFlipped(false);
@@ -1147,9 +1236,9 @@ function Review({
   if (!section) {
     return (
       <EmptyState
-        title="先選擇一個牌組"
-        description="複習會依照目前選取的牌組載入到期卡片。"
-        primaryAction={{ label: "回單字庫", onClick: onDashboard }}
+        title="Choose a deck first"
+        description="Reviews load due cards from the currently selected deck."
+        primaryAction={{ label: "Back to Dashboard", onClick: onDashboard }}
       />
     );
   }
@@ -1158,10 +1247,10 @@ function Review({
     return (
       <section className="page review-page">
         <EmptyState
-          title={`${section.name} 今天完成了`}
-          description="沒有更多到期卡片。你可以回首頁看進度，或新增更多學習材料。"
-          primaryAction={{ label: "回首頁", onClick: onDashboard }}
-          secondaryAction={{ label: "新增單字", onClick: onAdd }}
+          title={`${section.name} is done for today`}
+          description="There are no more due cards. Go back to the dashboard or add more learning material."
+          primaryAction={{ label: "Back to Dashboard", onClick: onDashboard }}
+          secondaryAction={{ label: "Add Word", onClick: onAdd }}
         />
       </section>
     );
@@ -1169,20 +1258,34 @@ function Review({
 
   return (
     <section className="page review-page">
-      <header className="page-header action-header">
+      <header className="page-header action-header review-header">
         <div>
-          <p className="eyebrow">複習 · {section.name}</p>
+          <p className="eyebrow">Review · {section.name}</p>
           <h1>{queue.length} due</h1>
+          <p className="page-subtitle">FSRS schedules the next review after you rate recall difficulty.</p>
         </div>
-        {offline && <span className="offline-badge"><WifiOff size={16} /> 離線模式</span>}
+        {offline && <span className="offline-badge"><WifiOff size={16} /> Offline Mode</span>}
       </header>
       {!flipped ? (
-        <button className="review-card review-front" onClick={() => setFlipped(true)}>
+        <div
+          className="review-card review-front"
+          role="button"
+          tabIndex={0}
+          onClick={() => setFlipped(true)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              setFlipped(true);
+            }
+          }}
+        >
+          <span className="review-card-label">Front side</span>
           <span className="review-word">{current.word}</span>
-          <span className="review-hint">點擊或按 Space 顯示答案</span>
-        </button>
+          <span className="review-hint">Click or press Space to reveal the answer</span>
+        </div>
       ) : (
         <div className="review-card flipped">
+          <span className="review-card-label">Back side</span>
           <ReviewAnswer card={current} speech={speech} />
         </div>
       )}
@@ -1209,27 +1312,33 @@ function SectionList({
   sections,
   onOpen,
   onReview,
-  onAdd
+  onAdd,
+  compact = false
 }: {
   sections: SectionSummary[];
   onOpen: (id: string) => void;
   onReview: (id?: string) => void;
   onAdd: (id?: string) => void;
+  compact?: boolean;
 }) {
   return (
-    <div className="section-grid">
+    <div className={compact ? "deck-list" : "section-grid"}>
       {sections.map((section) => (
-        <article key={section.id} className="section-card">
+        <article key={section.id} className={compact ? "deck-row" : "section-card"}>
           <button className="section-open" onClick={() => onOpen(section.id)}>
-            <h3>{section.name}</h3>
+            {compact && <span className="deck-icon"><BookOpen size={17} /></span>}
+            <span className="deck-title">
+              <h3>{section.name}</h3>
+              {compact && <small>{section.totalCards} {section.totalCards === 1 ? "word" : "words"}</small>}
+            </span>
             <ChevronRight size={18} />
           </button>
           <div className="section-metrics">
-            <span>{section.totalCards} words</span>
-            <span>{section.dueToday} due</span>
+            <span>{section.totalCards} {section.totalCards === 1 ? "word" : "words"}</span>
+            <span className={section.dueToday > 0 ? "metric-due" : ""}>{section.dueToday} due</span>
             <span>{section.reviewedToday} reviewed</span>
           </div>
-          <div className="actions">
+          <div className={compact ? "deck-row-actions" : "actions"}>
             {section.dueToday > 0 ? (
               <button className="review-action" onClick={() => onReview(section.id)}><RotateCcw size={16} /> Review</button>
             ) : (
@@ -1248,27 +1357,32 @@ function GeneratedWordCard({ generated, onAdd, speech }: { generated: GeneratedW
     <article className="generated-card">
       <div className="detail-header">
         <div>
-          <p className="eyebrow">Generated</p>
+          <p className="eyebrow">Generated card</p>
           <div className="heading-with-audio">
             <h2>{generated.word}</h2>
-            <SpeechButton text={generated.word} speech={speech} label={`播放 ${generated.word}`} />
+            <SpeechButton text={generated.word} speech={speech} label={`Play ${generated.word}`} />
           </div>
         </div>
-        <button onClick={onAdd}><Send size={17} /> Add</button>
+        <button onClick={onAdd}><Send size={17} /> Add to Deck</button>
       </div>
       {generated.entries.map((entry) => (
         <div key={`${entry.partOfSpeech}-${entry.zhDefinition}`} className="entry">
           <span className="tag">{entry.partOfSpeech}</span>
-          <p><strong>{entry.zhDefinition}</strong> · {entry.enDefinition}</p>
-          {entry.examples.map((example) => (
-            <blockquote key={example.en}>
-              <span className="example-line">
-                <span>{example.en}</span>
-                <SpeechButton text={example.en} speech={speech} label="播放例句" />
-              </span>
-              <small>{example.zh}</small>
-            </blockquote>
-          ))}
+          <div className="definition-block">
+            <p><strong>{entry.zhDefinition}</strong></p>
+            <p>{entry.enDefinition}</p>
+          </div>
+          <div className="example-grid">
+            {entry.examples.map((example) => (
+              <blockquote key={example.en}>
+                <span className="example-line">
+                  <span>{example.en}</span>
+                  <SpeechButton text={example.en} speech={speech} label="Play example" />
+                </span>
+                <small>{example.zh}</small>
+              </blockquote>
+            ))}
+          </div>
         </div>
       ))}
     </article>
@@ -1280,7 +1394,7 @@ function ReviewAnswer({ card, speech }: { card: VocabCard; speech: SpeechControl
     <div className="answer">
       <div className="heading-with-audio">
         <h2>{card.word}</h2>
-        <SpeechButton text={card.word} speech={speech} label={`播放 ${card.word}`} />
+        <SpeechButton text={card.word} speech={speech} label={`Play ${card.word}`} />
       </div>
       {card.content.entries.map((entry, index) => (
         <ReviewEntry key={`${entry.partOfSpeech}-${entry.zhDefinition}`} entry={entry} isFirst={index === 0} speech={speech} />
@@ -1298,7 +1412,7 @@ function ReviewEntry({ entry, isFirst, speech }: { entry: GeneratedWord["entries
         <blockquote key={example.en}>
           <span className="example-line">
             <span>{example.en}</span>
-            <SpeechButton text={example.en} speech={speech} label="播放例句" />
+            <SpeechButton text={example.en} speech={speech} label="Play example" />
           </span>
           <small>{example.zh}</small>
         </blockquote>
@@ -1341,9 +1455,9 @@ function SettingsView({
     <section className="page narrow">
       <header className="page-header">
         <div>
-          <p className="eyebrow">設定</p>
-          <h1>複習強度</h1>
-          <p className="page-subtitle">只調整保留率，不暴露 FSRS 模型參數。</p>
+          <p className="eyebrow">Settings</p>
+          <h1>Review Intensity</h1>
+          <p className="page-subtitle">Adjust retention targets without exposing FSRS model parameters.</p>
         </div>
       </header>
       <div className="panel stack">
@@ -1363,17 +1477,17 @@ function SettingsView({
         </div>
         <InlineNotice
           tone="info"
-          title={`目前設定：${selected.label} ${Math.round(selected.retention * 100)}%`}
-          description="越高代表記得更牢，但每天複習更多；越低代表複習較少，但忘記機率較高。此設定會套用到之後送出的複習排程，不會自動重排既有卡片。"
+          title={`Current setting: ${selected.label} ${Math.round(selected.retention * 100)}%`}
+          description="Higher retention means stronger memory and more daily reviews. Lower retention reduces load but increases forgetting risk. This applies to future review scheduling and does not automatically reschedule existing cards."
         />
       </div>
     </section>
   );
 }
 
-function Stat({ label, value }: { label: string; value: number }) {
+function Stat({ label, value, tone = "info" }: { label: string; value: number; tone?: "danger" | "warning" | "success" | "info" }) {
   return (
-    <div className="stat">
+    <div className={`stat ${tone}`}>
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
@@ -1460,10 +1574,10 @@ function InlineNotice({
 }
 
 const ratingButtons = [
-  { rating: ReviewRating.Again, label: "Again", hint: "今天再看", className: "again" },
-  { rating: ReviewRating.Hard, label: "Hard", hint: "較快複習", className: "hard" },
-  { rating: ReviewRating.Good, label: "Good", hint: "正常", className: "good" },
-  { rating: ReviewRating.Easy, label: "Easy", hint: "延後", className: "easy" }
+  { rating: ReviewRating.Again, label: "Again", hint: "Later today", className: "again" },
+  { rating: ReviewRating.Hard, label: "Hard", hint: "Soon", className: "hard" },
+  { rating: ReviewRating.Good, label: "Good", hint: "Normal", className: "good" },
+  { rating: ReviewRating.Easy, label: "Easy", hint: "Later", className: "easy" }
 ] as const;
 
 function formatDueDate(value: string) {
@@ -1480,7 +1594,7 @@ function actionClassName(variant: EmptyAction["variant"]) {
 function formatAppError(error: unknown) {
   const message = error instanceof Error ? error.message : "";
   if (message.includes("Internal server error") || message.includes("Failed to fetch")) {
-    return "無法連線到 API。請確認 Firebase emulator 是否啟動，或移除 VITE_API_BASE_URL 使用本地 mock 模式。";
+    return "Cannot connect to the API. Start the Firebase emulator or remove VITE_API_BASE_URL to use local mock mode.";
   }
-  return message || "發生未預期的錯誤。";
+  return message || "An unexpected error occurred.";
 }
