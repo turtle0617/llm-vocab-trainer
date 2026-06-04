@@ -655,7 +655,7 @@ function Dashboard({
                       title={`${day.date.slice(5)}: ${day.count} cards`}
                     />
                   </div>
-                  <span>{day.date.slice(5)}</span>
+                  <span>{day.date.slice(8)}</span>
                 </div>
               ))}
             </div>
