@@ -15,7 +15,8 @@ import type {
 import { desiredRetentionByIntensity, ReviewRating, type UpdateSettingsRequest } from "@vocab/shared";
 import { getAppCheckToken, getIdToken, markRequiresLogin } from "./auth";
 
-const FORCE_MOCK_API = import.meta.env.DEV && import.meta.env.VITE_FORCE_MOCK_API === "true";
+const FORCE_MOCK_API =
+  import.meta.env.DEV && import.meta.env.MODE !== "test" && import.meta.env.VITE_FORCE_MOCK_API === "true";
 const API_BASE_URL = import.meta.env.DEV && !FORCE_MOCK_API ? import.meta.env.VITE_API_BASE_URL : undefined;
 const USE_MOCK_API = import.meta.env.DEV && (FORCE_MOCK_API || !API_BASE_URL);
 const TRANSIENT_RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
@@ -115,13 +116,13 @@ class ApiFetch {
         // Fall through to the auth error path below.
       }
       this.auth.markRequiresLogin();
-      throw new ApiAuthError(error?.message ?? "登入已過期，請重新登入。");
+      throw new ApiAuthError(error?.message ?? "Your session expired. Please sign in again.");
     }
     if (response.status === 401) {
       this.auth.markRequiresLogin();
-      throw new ApiAuthError(error?.message ?? "登入已過期，請重新登入。");
+      throw new ApiAuthError(error?.message ?? "Your session expired. Please sign in again.");
     }
-    if (response.status === 403) throw new Error(error?.message ?? "此帳號沒有權限。");
+    if (response.status === 403) throw new Error(error?.message ?? "This account does not have permission.");
     throw new Error(error?.message ?? "Request failed");
   }
 }
@@ -195,7 +196,7 @@ const liveApi = {
 export const api = USE_MOCK_API ? createMockApi() : liveApi;
 
 function createMockApi(): typeof liveApi {
-  const storageKey = "vocab-pwa-dev-mock";
+  const storageKey = "vocab-pwa-dev-mock-v2";
 
   type MockState = {
     settings: AppSettings;
@@ -230,27 +231,7 @@ function createMockApi(): typeof liveApi {
         reviews: parsed.reviews ?? []
       };
     }
-    const now = new Date().toISOString();
-    const state: MockState = {
-      settings: {
-        reviewIntensity: "standard",
-        desiredRetention: desiredRetentionByIntensity.standard,
-        updatedAt: now
-      },
-      sections: [
-        {
-          id: "demo-section",
-          name: "Demo Deck",
-          totalCards: 0,
-          dueToday: 0,
-          reviewedToday: 0,
-          createdAt: now,
-          updatedAt: now
-        }
-      ],
-      cards: [],
-      reviews: []
-    };
+    const state = createInitialMockState();
     save(state);
     return state;
   }
@@ -282,33 +263,147 @@ function createMockApi(): typeof liveApi {
     };
   }
 
+  function createInitialMockState(): MockState {
+    const now = new Date();
+    const isoNow = now.toISOString();
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const sections: SectionSummary[] = [
+      {
+        id: "toefl-core",
+        name: "TOEFL Core",
+        totalCards: 0,
+        dueToday: 0,
+        reviewedToday: 0,
+        createdAt: isoNow,
+        updatedAt: isoNow
+      },
+      {
+        id: "business-english",
+        name: "Business English",
+        totalCards: 0,
+        dueToday: 0,
+        reviewedToday: 0,
+        createdAt: isoNow,
+        updatedAt: isoNow
+      },
+      {
+        id: "daily-news",
+        name: "Daily News",
+        totalCards: 0,
+        dueToday: 0,
+        reviewedToday: 0,
+        createdAt: isoNow,
+        updatedAt: isoNow
+      }
+    ];
+    const cards = [
+      {
+        id: "resilient-card",
+        sectionId: "toefl-core",
+        word: "resilient",
+        normalizedWord: "resilient",
+        content: demoWord(
+          "resilient",
+          "adjective",
+          "able to recover quickly from difficulties or adapt to adversity",
+          "able to recover quickly from difficulties; tough",
+          [
+            ["She showed great resilience in the face of unexpected challenges.", "She recovered quickly under pressure."],
+            ["The resilient economy continued to grow amid uncertainty.", "The economy kept growing despite uncertainty."]
+          ]
+        ),
+        due: isoNow,
+        state: "review",
+        createdAt: isoNow,
+        updatedAt: isoNow
+      },
+      {
+        id: "nuanced-card",
+        sectionId: "toefl-core",
+        word: "nuanced",
+        normalizedWord: "nuanced",
+        content: demoWord(
+          "nuanced",
+          "adjective",
+          "showing careful attention to subtle differences",
+          "showing subtle differences in meaning or expression",
+          [["A nuanced answer is better than a simple yes or no.", "The answer shows more than one layer of meaning."]]
+        ),
+        due: tomorrow.toISOString(),
+        state: "review",
+        createdAt: isoNow,
+        updatedAt: isoNow
+      },
+      {
+        id: "candid-card",
+        sectionId: "business-english",
+        word: "candid",
+        normalizedWord: "candid",
+        content: demoWord(
+          "candid",
+          "adjective",
+          "honest and direct, especially when the truth is difficult",
+          "truthful and straightforward",
+          [["The manager gave candid feedback after the presentation.", "The feedback was direct and useful."]]
+        ),
+        due: isoNow,
+        state: "new",
+        createdAt: isoNow,
+        updatedAt: isoNow
+      }
+    ];
+    const reviews: CreateReviewRequest[] = [
+      {
+        clientReviewId: "demo-review-1",
+        cardId: "nuanced-card",
+        sectionId: "toefl-core",
+        rating: ReviewRating.Good,
+        reviewedAt: yesterday.toISOString()
+      }
+    ];
+    return {
+      settings: {
+        reviewIntensity: "standard",
+        desiredRetention: desiredRetentionByIntensity.standard,
+        updatedAt: isoNow
+      },
+      sections,
+      cards,
+      reviews
+    };
+  }
+
+  function demoWord(
+    word: string,
+    partOfSpeech: GeneratedWord["entries"][number]["partOfSpeech"],
+    zhDefinition: string,
+    enDefinition: string,
+    examples: Array<[string, string]>
+  ): GeneratedWord {
+    return {
+      word,
+      normalizedWord: word.toLowerCase(),
+      entries: [
+        {
+          partOfSpeech,
+          zhDefinition,
+          enDefinition,
+          examples: examples.map(([en, zh]) => ({ en, zh }))
+        }
+      ]
+    };
+  }
+
   return {
     async dashboard() {
-      const state = hydrate(load());
-      const today = new Date().toISOString().slice(0, 10);
-      const reviewTrend = Array.from({ length: 7 }, (_, index) => {
-        const date = new Date();
-        date.setDate(date.getDate() - (6 - index));
-        const key = date.toISOString().slice(0, 10);
-        return {
-          date: key,
-          count: state.reviews.filter((review) => review.reviewedAt.startsWith(key)).length
-        };
-      });
-      return {
-        totals: {
-          dueToday: state.sections.reduce((sum, section) => sum + section.dueToday, 0),
-          reviewedToday: state.reviews.filter((review) => review.reviewedAt.startsWith(today)).length,
-          streakDays: reviewTrend.filter((day) => day.count > 0).length,
-          totalCards: state.cards.length
-        },
-        reviewTrend,
-        sections: state.sections
-      };
+      return createDashboard(hydrate(load()));
     },
     async sync(params) {
       const state = hydrate(load());
-      const dashboard = await this.dashboard();
+      const dashboard = createDashboard(state);
       return {
         serverSyncedAt: new Date().toISOString(),
         ...(state.sections.some((section) => section.updatedAt > params.since) ||
@@ -369,39 +464,39 @@ function createMockApi(): typeof liveApi {
         entries: [
           {
             partOfSpeech: "noun",
-            zhDefinition: `${body.word.trim()} 的常見名詞解釋`,
+            zhDefinition: `A common noun meaning of "${body.word.trim()}".`,
             enDefinition: `A common noun meaning of "${body.word.trim()}".`,
             examples: [
               {
                 en: `I wrote "${body.word.trim()}" in my notebook.`,
-                zh: `我把「${body.word.trim()}」寫在筆記本裡。`
+                zh: `I saved "${body.word.trim()}" in my vocabulary notebook.`
               },
               {
                 en: `This "${body.word.trim()}" appears often in daily English.`,
-                zh: `這個「${body.word.trim()}」常出現在日常英文裡。`
+                zh: `This "${body.word.trim()}" appears often in everyday English.`
               },
               {
                 en: `The teacher explained the "${body.word.trim()}" with a simple example.`,
-                zh: `老師用一個簡單例子解釋這個「${body.word.trim()}」。`
+                zh: `The teacher explained "${body.word.trim()}" with a simple example.`
               }
             ]
           },
           {
             partOfSpeech: "verb",
-            zhDefinition: `${body.word.trim()} 的常見動詞解釋`,
+            zhDefinition: `A common verb meaning of "${body.word.trim()}".`,
             enDefinition: `A common verb meaning of "${body.word.trim()}".`,
             examples: [
               {
                 en: `Please ${normalized} before the meeting.`,
-                zh: `請在會議前 ${body.word.trim()}。`
+                zh: `Please ${normalized} before the meeting.`
               },
               {
                 en: `We need to ${normalized} this word again tomorrow.`,
-                zh: `我們明天需要再 ${body.word.trim()} 這個單字。`
+                zh: `We need to ${normalized} this word again tomorrow.`
               },
               {
                 en: `She tried to ${normalized} the idea in her own words.`,
-                zh: `她試著用自己的話 ${body.word.trim()} 這個想法。`
+                zh: `She tried to ${normalized} the idea in her own words.`
               }
             ]
           }
@@ -476,9 +571,32 @@ function createMockApi(): typeof liveApi {
       return { nextDue: card.due };
     },
     async speech() {
-      throw new Error("語音功能需要啟動 Firebase emulator 並設定 VITE_API_BASE_URL。");
+      throw new Error("Speech requires the Firebase emulator and VITE_API_BASE_URL.");
     }
   };
+
+  function createDashboard(state: MockState): DashboardResponse {
+    const today = new Date().toISOString().slice(0, 10);
+    const reviewTrend = Array.from({ length: 7 }, (_, index) => {
+        const date = new Date();
+        date.setDate(date.getDate() - (6 - index));
+        const key = date.toISOString().slice(0, 10);
+        return {
+          date: key,
+          count: state.reviews.filter((review) => review.reviewedAt.startsWith(key)).length
+        };
+      });
+      return {
+        totals: {
+          dueToday: state.sections.reduce((sum, section) => sum + section.dueToday, 0),
+          reviewedToday: state.reviews.filter((review) => review.reviewedAt.startsWith(today)).length,
+          streakDays: reviewTrend.filter((day) => day.count > 0).length,
+          totalCards: state.cards.length
+        },
+        reviewTrend,
+        sections: state.sections
+      };
+  }
 }
 
 const mockIntervalsByIntensity = {

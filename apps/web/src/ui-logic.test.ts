@@ -4,7 +4,10 @@ import {
   cleanPodcastPaste,
   formatScheduledFeedback,
   getCardDueStatus,
+  getCompactActionCopy,
   getDashboardAction,
+  getDeckPrioritySections,
+  getStatTone,
   getTrendScale,
   reviewIntensityPresets
 } from "./ui-logic";
@@ -28,6 +31,42 @@ describe("ui logic", () => {
     expect(
       getDashboardAction(dashboard({ dueToday: 0, reviewedToday: 4, streakDays: 2, totalCards: 10 })).kind
     ).toBe("done");
+  });
+
+  it("formats compact dashboard action copy", () => {
+    expect(getCompactActionCopy(dashboard({ dueToday: 3, reviewedToday: 0, streakDays: 0, totalCards: 10 }))).toBe(
+      "Review 3 due cards"
+    );
+    expect(getCompactActionCopy(dashboard({ dueToday: 0, reviewedToday: 0, streakDays: 0, totalCards: 0 }))).toBe(
+      "Create a deck to start"
+    );
+    expect(getCompactActionCopy(dashboard({ dueToday: 0, reviewedToday: 2, streakDays: 3, totalCards: 10 }))).toBe(
+      "Add another word"
+    );
+  });
+
+  it("sorts deck rows by review priority", () => {
+    const now = "2026-05-10T00:00:00.000Z";
+    const sections = [
+      { id: "low", name: "Low", totalCards: 50, dueToday: 0, reviewedToday: 3, createdAt: now, updatedAt: now },
+      { id: "large", name: "Large", totalCards: 100, dueToday: 0, reviewedToday: 1, createdAt: now, updatedAt: now },
+      { id: "due", name: "Due", totalCards: 12, dueToday: 4, reviewedToday: 0, createdAt: now, updatedAt: now },
+      { id: "reviewed", name: "Reviewed", totalCards: 8, dueToday: 0, reviewedToday: 7, createdAt: now, updatedAt: now }
+    ];
+
+    expect(getDeckPrioritySections(sections).map((section) => section.id)).toEqual([
+      "due",
+      "reviewed",
+      "low",
+      "large"
+    ]);
+  });
+
+  it("maps dashboard stat tones", () => {
+    expect(getStatTone("dueToday")).toBe("danger");
+    expect(getStatTone("reviewedToday")).toBe("success");
+    expect(getStatTone("streakDays")).toBe("warning");
+    expect(getStatTone("totalCards")).toBe("info");
   });
 
   it("exposes understandable review intensity presets", () => {
@@ -56,7 +95,7 @@ describe("ui logic", () => {
     expect(getCardDueStatus({ ...base, due: now.toISOString(), state: "new" }, now)).toBe("New");
     expect(getCardDueStatus({ ...base, due: "2026-05-09T00:00:00.000Z", state: "review" }, now)).toBe("Due");
     expect(getCardDueStatus({ ...base, due: "2026-05-12T00:00:00.000Z", state: "review" }, now)).toBe("Review");
-    expect(formatScheduledFeedback("2026-05-13T00:00:00.000Z", now)).toBe("已排到 3 天後");
+    expect(formatScheduledFeedback("2026-05-13T00:00:00.000Z", now)).toBe("Scheduled in 3 days");
   });
 
   it("cleans Apple Podcasts paste metadata", () => {
