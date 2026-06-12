@@ -291,6 +291,26 @@ BACKFILL_OWNER_UID=<firebase-auth-user-uid> BACKFILL_OWNER_DRY_RUN=false npm run
 
 The backfill updates legacy `sections`, `cards`, and `reviewLogs` that do not have `ownerUid`, sets missing `archivedAt` to `null` on sections/cards, and copies `settings/global` to `settings/<uid>`.
 
+Section dashboard summaries are stored on each `sections` document as `totalCards`, `dueToday`, `reviewedToday`,
+`lastReviewedAt`, `nextDueAt`, `summaryDate`, `summaryUpdatedAt`, and `summaryDirty`. Normal card/review writes keep these values
+up to date. Dashboard and deck reads lazily reconcile only stale summaries instead of running per-deck count queries on
+every request. This project does not use a Firebase scheduled function for summary maintenance.
+
+To inspect section summary drift without writing:
+
+```sh
+RECONCILE_OWNER_UID=<firebase-auth-user-uid> npm run reconcile:section-summaries -w functions
+```
+
+After checking the printed `changedSections`, `sections`, and estimated read/write counts, run the write:
+
+```sh
+RECONCILE_OWNER_UID=<firebase-auth-user-uid> RECONCILE_SECTION_SUMMARIES_DRY_RUN=false npm run reconcile:section-summaries -w functions
+```
+
+The reconcile script is idempotent and can be rerun. After a successful write, a second dry-run should usually report
+`changedSections: 0` unless new cards or reviews were written concurrently.
+
 The browser is blocked from direct Firestore access by `firestore.rules`:
 
 ```js
