@@ -151,6 +151,28 @@ describeIntegration("owner-scoped repository integration", () => {
     expect(sectionDoc.dueToday).toBe(0);
   });
 
+  it("does not decrement dueToday for a future-due card reviewed with a future client timestamp", async () => {
+    const userA = "user-a";
+    const section = await createSection(db, { name: "A" }, userA);
+    await createCard(db, { sectionId: section.id, content: generatedWord("due") }, createInitialFsrsState(), userA);
+    const futureCard = await createCard(db, { sectionId: section.id, content: generatedWord("future") }, createInitialFsrsState(), userA);
+    const futureDue = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const futureReviewedAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+    await db.collection("cards").doc(futureCard.id).update({ due: futureDue });
+    await db.collection("sections").doc(section.id).update({ dueToday: 1, nextDueAt: futureDue });
+
+    await writeReviewThroughRepository(db, {
+      ownerUid: userA,
+      sectionId: section.id,
+      cardId: futureCard.id,
+      clientReviewId: "future-skew-review",
+      reviewedAt: futureReviewedAt
+    });
+
+    const sectionDoc = (await db.collection("sections").doc(section.id).get()).data()!;
+    expect(sectionDoc.dueToday).toBe(1);
+  });
+
   it("lazy reconciles stale section summaries when sections are read", async () => {
     const userA = "user-a";
     const now = new Date().toISOString();

@@ -372,7 +372,7 @@ export async function writeReview(
     buildSectionSummaryPatch({
       current: reviewContext?.section,
       dueDelta:
-        reviewContext?.card && isDueAt(reviewContext.card.due, reviewedAt)
+        reviewContext?.card && isDueAt(reviewContext.card.due, now)
           ? -1 + (isDueAt(scheduled.due, now) ? 1 : 0)
           : 0,
       lastReviewedAt: reviewedAt,
