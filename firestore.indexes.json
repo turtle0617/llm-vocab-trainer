@@ -18,6 +18,15 @@
       ]
     },
     {
+      "collectionGroup": "sections",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerUid", "order": "ASCENDING" },
+        { "fieldPath": "archivedAt", "order": "ASCENDING" },
+        { "fieldPath": "nextDueAt", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "cards",
       "queryScope": "COLLECTION",
       "fields": [

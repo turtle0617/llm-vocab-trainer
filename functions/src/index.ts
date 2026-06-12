@@ -268,7 +268,7 @@ app.post("/api/reviews", async (req, res, next) => {
         state: scheduled.state,
         updatedAt: new Date().toISOString()
       });
-      await writeReview(db, transaction, body, scheduled, auth.uid);
+      await writeReview(db, transaction, body, scheduled, auth.uid, { card: card.data, section: card.section.data });
       return scheduled;
     });
 
