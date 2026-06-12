@@ -29,13 +29,15 @@ type SectionSummaryFields = {
   summaryDirty: boolean;
 };
 
-type SectionSummaryReconcileResult = {
+export type SectionSummaryReconcileResult = {
   sectionId: string;
   changed: boolean;
   before: Partial<SectionSummaryFields>;
   after: SectionSummaryFields;
+  current?: DocumentData;
   estimatedReads: number;
   estimatedWrites: number;
+  writeConflict: boolean;
 };
 
 export type SectionSummaryReconcileOwnerResult = {
@@ -100,6 +102,7 @@ export async function getSectionSummaries(db: Firestore, ownerUid: string): Prom
       ownerUid,
       sectionId: doc.id
     });
+    if (reconciled.current) return mapSection(doc.id, reconciled.current);
     return mapSection(doc.id, { ...data, ...reconciled.after });
   });
 }
@@ -133,11 +136,12 @@ export async function getSettings(db: Firestore, ownerUid: string): Promise<AppS
 }
 
 export async function getSyncDelta(db: Firestore, ownerUid: string, since: string): Promise<SyncResponse> {
-  const [dashboardChanged, settings] = await Promise.all([hasDashboardChangesSince(db, ownerUid, since), getSettings(db, ownerUid)]);
+  const now = new Date();
+  const [dashboardChanged, settings] = await Promise.all([hasDashboardChangesSince(db, ownerUid, since, now), getSettings(db, ownerUid)]);
   const settingsChanged = settings.updatedAt > since;
 
   return {
-    serverSyncedAt: new Date().toISOString(),
+    serverSyncedAt: now.toISOString(),
     ...(dashboardChanged ? { dashboard: await getDashboard(db, ownerUid) } : {}),
     ...(settingsChanged ? { settings } : {})
   };
@@ -150,8 +154,10 @@ export async function updateSettings(db: Firestore, reviewIntensity: ReviewInten
   return settings;
 }
 
-async function hasDashboardChangesSince(db: Firestore, ownerUid: string, since: string) {
-  const [sections, cards, reviews] = await Promise.all([
+async function hasDashboardChangesSince(db: Firestore, ownerUid: string, since: string, now = new Date()) {
+  if (getTodayUtc(since) !== getTodayUtc(now)) return true;
+
+  const [sections, cards, reviews, dueThreshold] = await Promise.all([
     db
       .collection("sections")
       .where("ownerUid", "==", ownerUid)
@@ -169,9 +175,17 @@ async function hasDashboardChangesSince(db: Firestore, ownerUid: string, since: 
       .where("ownerUid", "==", ownerUid)
       .where("reviewedAt", ">", since)
       .limit(1)
+      .get(),
+    db
+      .collection("sections")
+      .where("ownerUid", "==", ownerUid)
+      .where("archivedAt", "==", null)
+      .where("nextDueAt", ">", since)
+      .where("nextDueAt", "<=", now.toISOString())
+      .limit(1)
       .get()
   ]);
-  return !sections.empty || !cards.empty || !reviews.empty;
+  return !sections.empty || !cards.empty || !reviews.empty || !dueThreshold.empty;
 }
 
 export async function createCard(db: Firestore, body: CreateCardRequest, fsrs: unknown, ownerUid: string) {
@@ -473,7 +487,7 @@ export async function reconcileSectionSummariesForOwner(
   };
 }
 
-async function reconcileSectionSummary(
+export async function reconcileSectionSummary(
   db: Firestore,
   input: {
     current: DocumentData;
@@ -538,11 +552,33 @@ async function reconcileSectionSummary(
   };
   const before = getStoredSummaryFields(input.current);
   const changed = isSectionSummaryChanged(before, after);
-  const estimatedReads = 1 + 5;
-  const estimatedWrites = changed && !input.dryRun ? 1 : 0;
+  const estimatedReads = 1 + 5 + (changed && !input.dryRun ? 1 : 0);
+  let estimatedWrites = changed && !input.dryRun ? 1 : 0;
+  let current: DocumentData | undefined;
+  let writeConflict = false;
 
   if (changed && !input.dryRun) {
-    await db.collection("sections").doc(input.sectionId).update({ ...after, updatedAt: nowIso });
+    const sectionRef = db.collection("sections").doc(input.sectionId);
+    await db.runTransaction(async (transaction) => {
+      const latest = await transaction.get(sectionRef);
+      if (!latest.exists || latest.get("archivedAt") || latest.get("ownerUid") !== input.ownerUid) {
+        writeConflict = true;
+        estimatedWrites = 0;
+        return;
+      }
+
+      if (
+        latest.get("updatedAt") !== input.current.updatedAt ||
+        latest.get("summaryUpdatedAt") !== input.current.summaryUpdatedAt
+      ) {
+        writeConflict = true;
+        current = latest.data();
+        estimatedWrites = 0;
+        return;
+      }
+
+      transaction.update(sectionRef, { ...after, updatedAt: nowIso });
+    });
   }
 
   return {
@@ -550,8 +586,10 @@ async function reconcileSectionSummary(
     changed,
     before,
     after,
+    current,
     estimatedReads,
-    estimatedWrites
+    estimatedWrites,
+    writeConflict
   };
 }
 

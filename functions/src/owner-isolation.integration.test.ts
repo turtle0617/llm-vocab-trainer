@@ -12,8 +12,10 @@ import {
   deleteSection,
   getCardsPage,
   getDashboard,
+  getSyncDelta,
   getExistingReviewByClientId,
   getSectionSummaries,
+  reconcileSectionSummary,
   reconcileSectionSummariesForOwner,
   writeReview
 } from "./repositories.js";
@@ -233,6 +235,110 @@ describeIntegration("owner-scoped repository integration", () => {
     expect(summary?.dueToday).toBe(1);
     expect(stored.dueToday).toBe(1);
     expect(stored.nextDueAt).toBe(null);
+  });
+
+  it("does not let stale lazy reconciliation overwrite a newer section write", async () => {
+    const userA = "user-a";
+    const now = new Date().toISOString();
+    const sectionRef = db.collection("sections").doc();
+    const cardRef = db.collection("cards").doc();
+    await sectionRef.set({
+      ownerUid: userA,
+      name: "conflict",
+      totalCards: 0,
+      dueToday: 0,
+      reviewedToday: 0,
+      lastReviewedAt: null,
+      nextDueAt: null,
+      summaryDate: "2000-01-01",
+      summaryUpdatedAt: "2000-01-01T00:00:00.000Z",
+      summaryDirty: true,
+      createdAt: now,
+      updatedAt: now,
+      archivedAt: null
+    });
+    await cardRef.set(cardDoc({ ownerUid: userA, sectionId: sectionRef.id, word: "due", due: "2000-01-01T00:00:00.000Z" }));
+    const staleSection = (await sectionRef.get()).data()!;
+    const concurrentWriteAt = new Date().toISOString();
+    await sectionRef.update({
+      totalCards: 99,
+      dueToday: 99,
+      reviewedToday: 99,
+      summaryUpdatedAt: concurrentWriteAt,
+      updatedAt: concurrentWriteAt
+    });
+
+    const result = await reconcileSectionSummary(db, {
+      current: staleSection,
+      dryRun: false,
+      now: new Date(),
+      ownerUid: userA,
+      sectionId: sectionRef.id
+    });
+    const stored = (await sectionRef.get()).data()!;
+
+    expect(result.writeConflict).toBe(true);
+    expect(result.estimatedWrites).toBe(0);
+    expect(result.current?.totalCards).toBe(99);
+    expect(stored.totalCards).toBe(99);
+    expect(stored.dueToday).toBe(99);
+    expect(stored.reviewedToday).toBe(99);
+  });
+
+  it("returns a sync dashboard when nextDueAt passes without a new write", async () => {
+    const userA = "user-a";
+    const sectionRef = db.collection("sections").doc();
+    const cardRef = db.collection("cards").doc();
+    const now = new Date();
+    const since = new Date(now.getTime() - 120_000).toISOString();
+    const dueAt = new Date(now.getTime() - 60_000).toISOString();
+    await sectionRef.set({
+      ownerUid: userA,
+      name: "sync stale",
+      totalCards: 1,
+      dueToday: 0,
+      reviewedToday: 0,
+      lastReviewedAt: null,
+      nextDueAt: dueAt,
+      summaryDate: now.toISOString().slice(0, 10),
+      summaryUpdatedAt: since,
+      summaryDirty: false,
+      createdAt: since,
+      updatedAt: since,
+      archivedAt: null
+    });
+    await cardRef.set(cardDoc({ ownerUid: userA, sectionId: sectionRef.id, word: "due", due: dueAt }));
+
+    const delta = await getSyncDelta(db, userA, since);
+
+    expect(delta.dashboard?.totals.dueToday).toBe(1);
+    expect(delta.dashboard?.sections[0]?.dueToday).toBe(1);
+  });
+
+  it("does not return a sync dashboard for fresh sections with no next due card", async () => {
+    const userA = "user-a";
+    const now = new Date();
+    const beforeSince = new Date(now.getTime() - 120_000).toISOString();
+    const since = new Date(now.getTime() - 60_000).toISOString();
+    await db.collection("sections").doc().set({
+      ownerUid: userA,
+      name: "fresh empty",
+      totalCards: 0,
+      dueToday: 0,
+      reviewedToday: 0,
+      lastReviewedAt: null,
+      nextDueAt: null,
+      summaryDate: now.toISOString().slice(0, 10),
+      summaryUpdatedAt: beforeSince,
+      summaryDirty: false,
+      createdAt: beforeSince,
+      updatedAt: beforeSince,
+      archivedAt: null
+    });
+
+    const delta = await getSyncDelta(db, userA, since);
+
+    expect(delta.dashboard).toBeUndefined();
   });
 
   it("manual section summary reconciliation supports dry-run and write mode", async () => {

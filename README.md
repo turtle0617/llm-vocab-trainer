@@ -296,6 +296,10 @@ Section dashboard summaries are stored on each `sections` document as `totalCard
 up to date. Dashboard and deck reads lazily reconcile only stale summaries instead of running per-deck count queries on
 every request. This project does not use a Firebase scheduled function for summary maintenance.
 
+Fresh sections use only the stored summary fields. A stale section reconciliation runs count/query repairs for total cards,
+due cards, reviews today, latest review, and next future due card, then writes the corrected summary if the section was not
+changed by a concurrent write.
+
 To inspect section summary drift without writing:
 
 ```sh
