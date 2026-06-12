@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { DashboardResponse, VocabCard } from "@vocab/shared";
+import type { DashboardResponse, SectionSummary, VocabCard } from "@vocab/shared";
 import {
   cleanPodcastPaste,
   formatScheduledFeedback,
@@ -9,6 +9,7 @@ import {
   getDeckPrioritySections,
   getStatTone,
   getTrendScale,
+  resolveSelectedSectionId,
   reviewIntensityPresets
 } from "./ui-logic";
 
@@ -62,6 +63,27 @@ describe("ui logic", () => {
     ]);
   });
 
+  it("preserves the selected deck while dashboard data refreshes", () => {
+    const sections = [
+      section({ id: "due", dueToday: 3 }),
+      section({ id: "selected", dueToday: 0 }),
+      section({ id: "fallback", dueToday: 1 })
+    ];
+
+    expect(resolveSelectedSectionId("selected", sections)).toBe("selected");
+  });
+
+  it("falls back to the primary deck only when the selected deck is gone", () => {
+    const sections = [
+      section({ id: "empty", dueToday: 0 }),
+      section({ id: "due", dueToday: 2 })
+    ];
+
+    expect(resolveSelectedSectionId("deleted", sections)).toBe("due");
+    expect(resolveSelectedSectionId("", sections)).toBe("due");
+    expect(resolveSelectedSectionId("deleted", [])).toBe("");
+  });
+
   it("maps dashboard stat tones", () => {
     expect(getStatTone("dueToday")).toBe("danger");
     expect(getStatTone("reviewedToday")).toBe("success");
@@ -112,3 +134,16 @@ https://podcasts.apple.com/tw/podcast/eat-your-crust/id1463004931?i=100076642482
     );
   });
 });
+
+function section(overrides: Partial<SectionSummary> & Pick<SectionSummary, "id">): SectionSummary {
+  const now = "2026-05-10T00:00:00.000Z";
+  return {
+    id: overrides.id,
+    name: overrides.name ?? overrides.id,
+    totalCards: overrides.totalCards ?? 0,
+    dueToday: overrides.dueToday ?? 0,
+    reviewedToday: overrides.reviewedToday ?? 0,
+    createdAt: overrides.createdAt ?? now,
+    updatedAt: overrides.updatedAt ?? now
+  };
+}

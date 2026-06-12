@@ -75,6 +75,11 @@ export function getPrimarySection(sections: SectionSummary[]) {
   return sections.find((section) => section.dueToday > 0) ?? sections[0];
 }
 
+export function resolveSelectedSectionId(currentSectionId: string, sections: SectionSummary[]) {
+  if (currentSectionId && sections.some((section) => section.id === currentSectionId)) return currentSectionId;
+  return getPrimarySection(sections)?.id ?? "";
+}
+
 export function getDeckPrioritySections(sections: SectionSummary[]) {
   return [...sections].sort((a, b) => {
     const dueDelta = b.dueToday - a.dueToday;

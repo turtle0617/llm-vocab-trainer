@@ -35,7 +35,7 @@ describe("pending review sync", () => {
     authMock.getAuthStatus.mockReturnValue("requiresLogin");
     const { syncPendingReviews } = await import("./sync");
 
-    await expect(syncPendingReviews()).resolves.toEqual({ status: "skipped", synced: 0 });
+    await expect(syncPendingReviews()).resolves.toEqual({ status: "skipped", synced: 0, syncedReviews: [] });
 
     expect(offlineMock.getPendingReviews).not.toHaveBeenCalled();
   });
@@ -44,7 +44,7 @@ describe("pending review sync", () => {
     authMock.getCurrentUserUid.mockReturnValue(null);
     const { syncPendingReviews } = await import("./sync");
 
-    await expect(syncPendingReviews()).resolves.toEqual({ status: "skipped", synced: 0 });
+    await expect(syncPendingReviews()).resolves.toEqual({ status: "skipped", synced: 0, syncedReviews: [] });
 
     expect(offlineMock.getPendingReviews).not.toHaveBeenCalled();
   });
@@ -55,7 +55,14 @@ describe("pending review sync", () => {
     apiMock.api.review.mockResolvedValue({ nextDue: "2026-05-10T00:00:00.000Z" });
     const { syncPendingReviews } = await import("./sync");
 
-    await expect(syncPendingReviews()).resolves.toEqual({ status: "complete", synced: 2 });
+    await expect(syncPendingReviews()).resolves.toEqual({
+      status: "complete",
+      synced: 2,
+      syncedReviews: [
+        { cardId: "card-1", sectionId: "section-1" },
+        { cardId: "card-1", sectionId: "section-1" }
+      ]
+    });
 
     expect(offlineMock.getPendingReviews).toHaveBeenCalledWith("user-a");
     expect(apiMock.api.review).toHaveBeenNthCalledWith(1, {
@@ -83,7 +90,12 @@ describe("pending review sync", () => {
     apiMock.api.review.mockResolvedValueOnce({ nextDue: "2026-05-10T00:00:00.000Z" }).mockRejectedValueOnce(error);
     const { syncPendingReviews } = await import("./sync");
 
-    await expect(syncPendingReviews()).resolves.toEqual({ status: "partial", synced: 1, error });
+    await expect(syncPendingReviews()).resolves.toEqual({
+      status: "partial",
+      synced: 1,
+      syncedReviews: [{ cardId: "card-1", sectionId: "section-1" }],
+      error
+    });
 
     expect(offlineMock.removePendingReview).toHaveBeenCalledTimes(1);
     expect(offlineMock.removePendingReview).toHaveBeenCalledWith("review-1");

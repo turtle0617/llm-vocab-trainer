@@ -31,7 +31,7 @@ import {
 } from "./auth";
 import { createBackgroundSyncScheduler, createForegroundTrigger, runExclusiveSync } from "./background-sync";
 import { cacheCards, cacheSections, getCachedCards, getPendingReviewCount, queueReview, removeCachedCard } from "./offline";
-import { syncPendingReviews } from "./sync";
+import { syncPendingReviews, type SyncedReview } from "./sync";
 import {
   cleanPodcastPaste,
   formatScheduledFeedback,
@@ -40,6 +40,7 @@ import {
   getDashboardAction,
   getDeckPrioritySections,
   getPrimarySection,
+  resolveSelectedSectionId,
   getStatTone,
   getTrendScale,
   reviewIntensityPresets,
@@ -49,6 +50,7 @@ import {
 type View = "dashboard" | "sections" | "add" | "review" | "settings";
 type ToastState = { message: string; tone?: "success" | "warning" | "info" };
 type EmptyAction = { label: string; onClick: () => void; variant?: "primary" | "secondary" | "review" | "add" };
+type SyncedReviewCleanup = { version: number; reviews: SyncedReview[] };
 type SpeechController = {
   playingText: string | null;
   speak: (text: string) => Promise<void>;
@@ -64,13 +66,14 @@ export function App() {
   const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
   const [sections, setSections] = useState<SectionSummary[]>([]);
   const [selectedSectionId, setSelectedSectionId] = useState<string>("");
-  const [syncVersion, setSyncVersion] = useState(0);
+  const [syncedReviewCleanup, setSyncedReviewCleanup] = useState<SyncedReviewCleanup>({ version: 0, reviews: [] });
   const [error, setError] = useState<string>("");
   const [toast, setToast] = useState<ToastState | null>(null);
   const [appUpdateAvailable, setAppUpdateAvailable] = useState(shouldShowDevUpdateBanner);
   const [reviewIntensity, setReviewIntensity] = useState<ReviewIntensityId>("standard");
   const [settingsSaving, setSettingsSaving] = useState(false);
   const appUpdateControllerRef = useRef<AppUpdateController | null>(null);
+  const selectedSectionIdRef = useRef("");
   const syncInProgressRef = useRef(false);
   const syncLastCompletedAtRef = useRef(0);
   const foregroundSyncDebounceTimerRef = useRef<number | null>(null);
@@ -82,6 +85,15 @@ export function App() {
     [sections, selectedSectionId]
   );
 
+  useEffect(() => {
+    selectedSectionIdRef.current = selectedSectionId;
+  }, [selectedSectionId]);
+
+  function selectSection(sectionId: string) {
+    selectedSectionIdRef.current = sectionId;
+    setSelectedSectionId(sectionId);
+  }
+
   function notify(message: string, tone: ToastState["tone"] = "success") {
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     setToast({ message, tone });
@@ -92,12 +104,12 @@ export function App() {
   }
 
   function openAdd(sectionId?: string) {
-    if (sectionId) setSelectedSectionId(sectionId);
+    if (sectionId) selectSection(sectionId);
     setView("add");
   }
 
   function openReview(sectionId?: string) {
-    if (sectionId) setSelectedSectionId(sectionId);
+    if (sectionId) selectSection(sectionId);
     setView("review");
   }
 
@@ -118,7 +130,10 @@ export function App() {
   async function applyDashboard(next: DashboardResponse) {
     setDashboard(next);
     setSections(next.sections);
-    if (!selectedSectionId && next.sections[0]) setSelectedSectionId(getPrimarySection(next.sections)?.id ?? "");
+    const resolvedSectionId = resolveSelectedSectionId(selectedSectionIdRef.current, next.sections);
+    if (resolvedSectionId !== selectedSectionIdRef.current) {
+      selectSection(resolvedSectionId);
+    }
     await cacheSections(next.sections);
   }
 
@@ -151,9 +166,8 @@ export function App() {
       setPendingReviewCount(await getPendingReviewCount(getCurrentUserUid()));
     }
 
-    async function syncAuthenticatedApp(options: { showLoading: boolean; showToast: boolean; fullSync: boolean }) {
+    async function syncAuthenticatedApp(options: { showToast: boolean; fullSync: boolean }) {
       await runExclusiveSync(syncInProgressRef, async () => {
-        if (options.showLoading) setBootstrapping(true);
         if (options.showToast) notify("Syncing data...", "info");
         try {
           const syncResult = await syncPendingReviews();
@@ -161,26 +175,49 @@ export function App() {
             notify("Some offline reviews are still pending. They will sync after sign-in or reconnecting.", "warning");
           }
           if (!cancelled) {
+            if (syncResult.syncedReviews.length > 0) {
+              setSyncedReviewCleanup((current) => ({
+                version: current.version + 1,
+                reviews: syncResult.syncedReviews
+              }));
+            }
+            let refreshedDashboard = false;
             if (options.fullSync || syncLastCompletedAtRef.current === 0) {
               await loadDashboard();
+              refreshedDashboard = true;
               await loadSettings();
               syncLastCompletedAtRef.current = Date.now();
             } else {
               const delta = await api.sync({ since: new Date(syncLastCompletedAtRef.current).toISOString() });
-              if (delta.dashboard) await applyDashboard(delta.dashboard);
+              if (delta.dashboard) {
+                await applyDashboard(delta.dashboard);
+                refreshedDashboard = true;
+              }
               if (delta.settings) setReviewIntensity(delta.settings.reviewIntensity);
               syncLastCompletedAtRef.current = new Date(delta.serverSyncedAt).getTime();
             }
+            if (syncResult.synced > 0 && !refreshedDashboard) {
+              await loadDashboard();
+              syncLastCompletedAtRef.current = Date.now();
+            }
             await refreshPendingCount();
             if (syncResult.status === "complete") {
-              setSyncVersion((value) => value + 1);
-              if (options.showToast) notify("Sync complete");
+              if (options.showToast && syncResult.synced > 0) notify("Sync complete");
             }
           }
-        } finally {
-          if (!cancelled && options.showLoading) setBootstrapping(false);
+        } catch (err) {
+          if (!cancelled && options.showToast) notify(formatAppError(err), "warning");
         }
       });
+    }
+
+    async function loadAuthenticatedAppShell() {
+      setBootstrapping(true);
+      await Promise.all([loadDashboard(), loadSettings()]);
+      if (cancelled) return;
+      syncLastCompletedAtRef.current = Date.now();
+      setBootstrapping(false);
+      void syncAuthenticatedApp({ showToast: false, fullSync: false });
     }
 
     const unsubscribe = subscribeAuthState((nextStatus) => {
@@ -194,7 +231,7 @@ export function App() {
           void loadDashboard();
           void loadSettings();
         } else {
-          void syncAuthenticatedApp({ showLoading: true, showToast: false, fullSync: true });
+          void loadAuthenticatedAppShell();
         }
       } else {
         setBootstrapping(false);
@@ -211,7 +248,7 @@ export function App() {
         foregroundSyncDebounceTimerRef.current = window.setTimeout(callback, delay);
         return foregroundSyncDebounceTimerRef.current;
       },
-      sync: () => void syncAuthenticatedApp({ showLoading: false, showToast: true, fullSync: false })
+      sync: () => void syncAuthenticatedApp({ showToast: true, fullSync: false })
     });
 
     const appUpdate = createAppUpdateController({
@@ -264,13 +301,13 @@ export function App() {
     await signOut();
     setDashboard(null);
     setSections([]);
-    setSelectedSectionId("");
+    selectSection("");
   }
 
   const appUpdateNotice = appUpdateAvailable ? <AppUpdateNotice onUpdate={() => void applyAppUpdate()} /> : null;
 
   if (authStatus === "loading" || bootstrapping) {
-    return <LoadingState title="Loading account and syncing data" />;
+    return <LoadingState title="Loading account" />;
   }
 
   if (authStatus === "anonymous" || authStatus === "requiresLogin") {
@@ -322,7 +359,7 @@ export function App() {
           <Dashboard
             dashboard={dashboard}
             onOpenSection={(id) => {
-              setSelectedSectionId(id);
+              selectSection(id);
               setView("sections");
             }}
             onReview={openReview}
@@ -336,16 +373,15 @@ export function App() {
             selectedSectionId={selectedSection?.id ?? ""}
             onCreated={async (section) => {
               setSections((current) => [section, ...current]);
-              setSelectedSectionId(section.id);
+              selectSection(section.id);
               notify(`Created "${section.name}"`);
               await loadDashboard();
             }}
-            onSelect={setSelectedSectionId}
+            onSelect={selectSection}
             onAdd={() => openAdd(selectedSection?.id)}
             onReview={() => openReview(selectedSection?.id)}
             onDeleted={async () => {
               await loadDashboard();
-              setSelectedSectionId("");
             }}
             speech={speech}
           />
@@ -354,7 +390,7 @@ export function App() {
           <AddWord
             sections={sections}
             selectedSectionId={selectedSection?.id ?? ""}
-            onSectionChange={setSelectedSectionId}
+            onSectionChange={selectSection}
             onAdded={loadDashboard}
             onReview={openReview}
             onCreateSection={() => setView("sections")}
@@ -368,7 +404,7 @@ export function App() {
             onAdd={() => openAdd(selectedSection?.id)}
             onDashboard={() => setView("dashboard")}
             notify={notify}
-            syncVersion={syncVersion}
+            syncedReviewCleanup={syncedReviewCleanup}
             speech={speech}
           />
         )}
@@ -1136,7 +1172,7 @@ function Review({
   onAdd,
   onDashboard,
   notify,
-  syncVersion,
+  syncedReviewCleanup,
   speech
 }: {
   section?: SectionSummary;
@@ -1144,7 +1180,7 @@ function Review({
   onAdd: () => void;
   onDashboard: () => void;
   notify: (message: string, tone?: ToastState["tone"]) => void;
-  syncVersion: number;
+  syncedReviewCleanup: SyncedReviewCleanup;
   speech: SpeechController;
 }) {
   const [queue, setQueue] = useState<VocabCard[]>([]);
@@ -1209,7 +1245,19 @@ function Review({
     setFlipped(false);
     setOffline(false);
     void load(true);
-  }, [section?.id, syncVersion]);
+  }, [section?.id]);
+
+  useEffect(() => {
+    if (!section || syncedReviewCleanup.reviews.length === 0) return;
+    const syncedCardIds = new Set(
+      syncedReviewCleanup.reviews
+        .filter((review) => review.sectionId === section.id)
+        .map((review) => review.cardId)
+    );
+    if (syncedCardIds.size === 0) return;
+
+    setQueue((existing) => existing.filter((card) => !syncedCardIds.has(card.id)));
+  }, [section?.id, syncedReviewCleanup.version]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
